@@ -1,3 +1,4 @@
+/*jshint esversion: 6*/
 /**
  * Utilize async here to init ERC20 Token contract first to allow
  * Token-like trading contract to test on.

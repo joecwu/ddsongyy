@@ -1,3 +1,4 @@
+/*jshint esversion: 6*/
 const privateKeys = require('./truffle-keys').private;
 const publicKeys = require('./truffle-keys').public;
 const EthereumTx = require('ethereumjs-tx');

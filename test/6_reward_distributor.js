@@ -1,8 +1,10 @@
+/*jshint esversion: 6*/
 const privateKeys = require('./truffle-keys').private;
 const publicKeys = require('./truffle-keys').public;
 const EthereumTx = require('ethereumjs-tx');
 var init_erc20_tok = require("./3_init_TBD_erc20.js");
 var storage_registry = artifacts.require("./RewardDistributor.sol");
+var sha256coder = require('js-sha256').sha256;
 
 var proof_of_stake_balance = 100;
 var decimals = 18;
@@ -302,5 +304,126 @@ contract('RewardDistributor', function(accounts) {
 
   }); // end of describe
 
-  /* jshint ignore:end */
+  describe("RewardDistributor ipfs metadata and encrypting IPFS test cases", function() {
+    let web3Contract = null;
+    let eventCounter = {}; // to track all events fired
+    let erc20_contract = null;
+    let registry_contract = null;
+
+    /* jshint ignore:start */
+    before(async () => {
+      context = await init_erc20_tok.run(accounts);
+      erc20_contract = context.erc20tokInstance;
+      assert(erc20_contract !== undefined, 'has been assigned with ERC20 contract instance');
+      registry_contract = (await storage_registry.deployed(erc20_contract.address, true, proof_of_stake_balance, {from: accounts[0]}));
+      web3Contract = web3.eth.contract(registry_contract.abi).at(registry_contract.address);
+      owner = web3Contract._eth.coinbase;
+      logging('ERC20 Token Contract Address=' + erc20_contract.address);
+      logging('RewardDistributor Contract Address=' + registry_contract.address);
+      logging('accounts[0]=' + accounts[0]);
+      logging('owner=' + owner + ' publicKeys[0]=' + publicKeys[0]);
+      logging('other=' + accounts[1] + ' publicKeys[1]=' + publicKeys[1]);
+      let other = publicKeys[1];
+  
+      // Verifying that you have specified the right key for testing in ganache-cli
+      if (publicKeys[0] !== owner || publicKeys[1] !== other) {
+        throw new Error('Use `truffle develop` and store the keys in ./test/truffle-keys.js' +
+        ', and make sure you specify these keys in ganache-cli');
+      }
+  
+      // Tracks all events for later verification, count may be sufficient?
+      registry_contract.allEvents({}, (error, details) => {
+        if (error) {
+          console.error(error);
+        } else {
+          let count = eventCounter[details.event];
+          eventCounter[details.event] = count ? count + 1 : 1;
+        }
+      });
+    });
+  
+    it('should be able to register metadata and an encrypted hash by any user', async function() {
+      let notOwner = publicKeys[6];
+      // The content for the IPFS hash is 'This is the content for testing.' excluding the single quote in the file.
+      // The encryption here we use is a simple 1-way hash with SHA256SUM which derives:
+      // c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be
+      let testIPFSData = "QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd";
+      // Metadata generated for above content in our test case is the following
+      let testMetadata = `{
+        "description": "whatever you want to put here",
+        "filesize": 33,
+        "encrypted": "c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be"
+      }`;
+      let normalized_testMetadata = JSON.stringify(JSON.parse(testMetadata));
+      let normalize_ipfsMetadata = "QmXG9KAZ2Tc7rM71MUBkwcPYzBAbYTpQxgjzyFdv8ndoBT";
+      let encryptedIdx = sha256coder(testIPFSData);
+      let expect_reward = (33 * 10**decimals) / filesize_to_token_ex;
+      logging('normalized_json=' + normalized_testMetadata);
+
+      assert.equal(encryptedIdx, 'c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be', 'sha256 lib not compatible, expecting sha256 c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be but got ' + encryptedIdx);
+      let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
+      logging("new balance for " + notOwner + " is " + notOwnerBalanceBefore);
+      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, encryptedIdx, testIPFSData, 33, {from: notOwner}))
+      logging('register encrypted IPFS status = ' + reg_successful.toString());
+      let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
+      logging("new balance for " + notOwner + " is " + notOwnerBalanceAfter);
+      assert.equal(notOwnerBalanceAfter, expect_reward, "expected reward should be 165000000");
+    }); // end test case
+
+    it('should be able to register metadata and a 1G file by another user', async function() {
+      let notOwner = publicKeys[7]; // uploading 1G
+      let expect_reward = (1073741824 * 10**decimals) / filesize_to_token_ex;
+      // a 1073741824 bytes file with all 0 in it.
+      // SHA256 = 49bc20df15e412a64472421e13fe86ff1c5165e18b2afccf160d4dc19fe68a14
+      let testIPFSData = "QmdiETTY5fiwTkJeERbWAbPKtzcyjzMEJTJJosrqo2qKNm";
+      // Metadata generated for above content in our test case is the following
+      let testMetadata = `{
+        "description": "an 1G file",
+        "filesize": 1073741824,
+        "encrypted": "92b73a3c06a93b0a5f8d0974efcae2d414015979f577679ae48f71ddf5ac2d33"
+      }`;
+      let normalized_testMetadata = JSON.stringify(JSON.parse(testMetadata));
+      let normalize_ipfsMetadata = "QmWqRJZghQftthJDVqJFNvB5ScatZFTp259sTAVesquLWv";
+      let encryptedIdx = sha256coder(testIPFSData);
+      logging('normalized_json=' + normalized_testMetadata);
+
+      assert.equal(encryptedIdx, '92b73a3c06a93b0a5f8d0974efcae2d414015979f577679ae48f71ddf5ac2d33', 'sha256 lib not compatible, expecting sha256 92b73a3c06a93b0a5f8d0974efcae2d414015979f577679ae48f71ddf5ac2d33 but got ' + encryptedIdx);
+      let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
+      logging("new balance for " + notOwner + " is " + notOwnerBalanceBefore);
+      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, encryptedIdx, testIPFSData, 1073741824, {from: notOwner}))
+      logging('register encrypted IPFS status = ' + reg_successful.toString());
+      let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
+      logging("new balance for " + notOwner + " is " + notOwnerBalanceAfter);
+      assert.equal(notOwnerBalanceAfter, expect_reward, "expected reward should be 5368709120000000");
+    }); // end test case
+
+    /**
+     * The original registerar should obtain additional tokens when the other user purchase it.
+     */
+    it('should be able to buy and retrieve the IPFS hash by any user with tokens', async function() {
+      let uploader = publicKeys[6];
+      let purchaser = publicKeys[7];
+      let normalize_ipfsMetadata = "QmXG9KAZ2Tc7rM71MUBkwcPYzBAbYTpQxgjzyFdv8ndoBT";
+      let encryptedIdx = "c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be";
+
+      let uploaderBalance = (await erc20_contract.balanceOf.call(uploader)).toNumber();
+      logging("existing balance for " + uploader + " is " + uploaderBalance);
+      assert.equal(uploaderBalance, 165000000, "expected reward should be 165000000");
+      let purchaserBalance = (await erc20_contract.balanceOf.call(purchaser)).toNumber();
+      logging("existing balance for " + purchaser + " is " + purchaserBalance);
+      assert.equal(purchaserBalance, 5368709120000000, "expected reward should be 5368709120000000");
+      let results = (await registry_contract.decryptIPFS(encryptedIdx, normalize_ipfsMetadata, {from: purchaser}))
+      logging('fetching decrypted IPFS hash = ' + results[0] + " and token cost = " + results[1]);
+      let uploaderNewBalance = (await erc20_contract.balanceOf.call(uploader)).toNumber();
+      logging("new balance for " + uploader + " is " + uploaderNewBalance);
+      assert.equal(uploaderNewBalance, 330000000, "expected new balance should be 165000000");
+      let purchaserNewBalance = (await erc20_contract.balanceOf.call(purchaser)).toNumber();
+      logging("new balance for " + purchaser + " is " + purchaserNewBalance);
+      assert.equal(purchaserNewBalance, 5368708955000000, "expected remaining balance should be 5368708955000000");
+
+    }); // end test case
+
+    /* jshint ignore:end */
+  }); // end of describe
+
 }); // end of contract

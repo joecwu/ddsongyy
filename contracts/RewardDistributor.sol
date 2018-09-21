@@ -33,9 +33,21 @@ contract RewardDistributor is SafeMath {
     * Data contribution from wallets, e.g. wallet => set[IPFS hash].
     */
     uint8 constant defaultRecord = 1; // only record up to 200, and start rotating. FIFO.
-    // mapping (address => bytes) public ipfsMapping; // record all IPFS registry per wallet
+    // mapping (address => bytes) public ipfsMapping; // record all IPFS registry per wallet? not economicable!
     mapping (address => string) private ipfsMapping; // record ONLY one IPFS registry per wallet for now - prototype
-    mapping (string => address) private ipfsRecordOwner; // like the title for property, First come first serve
+    // like the title for property, First come first serve
+    mapping (string => address) private ipfsMetaData;
+    /** 
+    Provides the real IPFS hash when user call and pay for the proper token value.
+      price: token to purchase ipfs hash
+      ipfsHash: the real IPFS hash
+    */
+    struct ipfsPayment {
+        uint256 price;
+        string  ipfsHash;
+    }
+    // unique string map to the correct Ipfs Payment record
+    mapping (string => ipfsPayment) private decryptIpfs;
     
     // TODO: Introduce penalties (lien) to hold rewards or wallet removal for bad actors
     // mapping (address => bool) blacklist;
@@ -52,6 +64,8 @@ contract RewardDistributor is SafeMath {
      */
     event RewardTokens(address indexed buyer, uint256 ethersSent, uint256 tokensBought);
     event RegisteredRecord(address indexed registor, string ipfsHash);
+    event RegisteredEncryptedRecord(address indexed registor, string ipfsHash, uint256 underlyingFileSize, uint256 tokenCost);
+    event PurchaseTxRecord(address indexed buyer, address indexed seller, uint256 tokenCost);
     event RewardEvent(string msg, bool allowTokenEx);
 
     constructor(address _ex_tok_addr, bool enableTokenEx, uint256 _pos) public {
@@ -100,20 +114,70 @@ contract RewardDistributor is SafeMath {
     }
 
     /**
-    Update record for new IPFS hash. Needs to burn gas. Fees are applied in the future.
-    TODO: extend to more than 1 record to keep
+    TODO: extend to more than 1 record to keep? or it is not necessary?
+    Update record for new IPFS hash. Needs to burn gas.
+    This provides real IPFS hash without encryption, users can access IPFS hash for free.
      */
     function registerIPFS(string ipfsHash, uint256 filesize) external payable returns (bool) {
         require(bytes(ipfsHash).length > 0, "cannot store empty hash"); // can't register empty hash
-        require(ipfsRecordOwner[ipfsHash] == 0, "ipfs hash already registered"); // new record only
+        require(ipfsMetaData[ipfsHash] == 0, "ipfs hash already registered"); // new record only
         ipfsMapping[msg.sender] = ipfsHash;
-        ipfsRecordOwner[ipfsHash] = msg.sender;
+        ipfsMetaData[ipfsHash] = msg.sender;
         emit RegisteredRecord(msg.sender, ipfsHash);
         // BMD token = filesize / defaultRewardFileSize e.g. 400GB / 200GB = 2 BMD
         uint256 bmd_token_granted = safeDiv(safeMul(filesize, 10**decimals), defaultRewardFileSize);
         if (InterfaceERC20(exchanging_token_addr).transfer(msg.sender, bmd_token_granted)) {
             emit RewardTokens(msg.sender, msg.value, bmd_token_granted);
+        } else {
+            revert("Registering failed");
         }
+    }
+
+    /**
+      ipfsMetadataHash: metadata IPFS content hash
+      encryptedIndex: a SHA256 value as index for this record
+      ipfsHash: the real IPFS hash for the underlying file/content
+      realFilesize: The real file size for ipfsHash
+     */
+    function encryptIPFS(string ipfsMetadataHash, string encryptedIndex, string ipfsHash, uint256 realFilesize) external payable returns (bool) {
+        require(bytes(ipfsHash).length > 0, "cannot store empty ipfs hash"); // can't register empty hash
+        require(bytes(ipfsMetadataHash).length > 0, "cannot store empty ipfs metadata hash"); // can't register empty hash
+        require(ipfsMetaData[ipfsMetadataHash] == 0, "ipfs metadata hash already registered"); // new record only
+        // BMD token = filesize / defaultRewardFileSize e.g. 400GB / 200GB = 2 BMD
+        uint256 bmd_token_cost = safeDiv(safeMul(realFilesize, 10**decimals), defaultRewardFileSize);
+        ipfsMetaData[ipfsMetadataHash] = msg.sender;
+        decryptIpfs[encryptedIndex].price = bmd_token_cost;
+        decryptIpfs[encryptedIndex].ipfsHash = ipfsHash;
+        // This refers to the encrypted ones
+        emit RegisteredEncryptedRecord(msg.sender, ipfsMetadataHash, realFilesize, bmd_token_cost);
+        if (InterfaceERC20(exchanging_token_addr).transfer(msg.sender, bmd_token_cost)) {
+            emit RewardTokens(msg.sender, msg.value, bmd_token_cost);
+        } else {
+            revert("Registering failed");
+        }
+        return true;
+    }
+
+    /**
+     encryptedIndex: the index to look up and pay tokens for the real IPFS hash
+     ipfsMetadataHash: the owner of the metadata to get reward
+
+     return: ipfsHash, token_cost
+     */
+    function decryptIPFS(string encryptedIndex, string ipfsMetadataHash) external returns (string, uint256) {
+        require(bytes(encryptedIndex).length > 0, "cannot query empty index");
+        // TBD: capture these to look for abuse?
+        // If price is 0, revert, the user does not need to call this function as well.
+        require(decryptIpfs[encryptedIndex].price != 0, "invalid index query");
+        uint256 minimal_cost = decryptIpfs[encryptedIndex].price;
+        address data_owner = ipfsMetaData[ipfsMetadataHash];
+        if (InterfaceERC20(exchanging_token_addr).transfer(data_owner, minimal_cost)) {
+            emit PurchaseTxRecord(msg.sender, data_owner, minimal_cost);
+        } else {
+            revert("Purchase failed");
+        }
+        string storage ipfsHash = decryptIpfs[encryptedIndex].ipfsHash;
+        return (ipfsHash, minimal_cost);
     }
 
     function () public payable {

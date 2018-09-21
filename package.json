@@ -1,0 +1,25 @@
+{
+  "name": "ddsongyy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "truffle.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matr1xc0in/ddsongyy.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/matr1xc0in/ddsongyy/issues"
+  },
+  "homepage": "https://github.com/matr1xc0in/ddsongyy#readme",
+  "dependencies": {
+    "js-sha256": "^0.9.0"
+  }
+}
