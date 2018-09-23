@@ -1,4 +1,4 @@
-pragma solidity ^0.4.20;
+pragma solidity ^0.4.24;
 
 // ERC20 standard interface with SafeMath
 // https://github.com/ethereum/EIPs/blob/master/EIPS/eip-20.md

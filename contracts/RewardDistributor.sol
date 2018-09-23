@@ -1,4 +1,4 @@
-pragma solidity ^0.4.20;
+pragma solidity ^0.4.24;
 
 import "./ERC20Token.sol";
 
@@ -64,11 +64,11 @@ contract RewardDistributor is SafeMath {
     /** 
      Events to capture and notify
      */
-    event RewardTokens(address indexed buyer, uint256 ethersSent, uint256 tokensBought);
-    event RegisteredRecord(address indexed registor, string ipfsHash);
-    event RegisteredEncryptedRecord(address indexed registor, string ipfsHash, uint256 underlyingFileSize, uint256 tokenCost);
-    event PurchaseTxRecord(address indexed buyer, address indexed seller, uint256 tokenCost);
-    event RewardEvent(string msg, bool allowTokenEx);
+    event RewardTokens(address indexed dataowner, uint256 ethersSent, uint256 tokensGranted);
+    event RegisteredFreeRecord(address indexed registor, string ipfsHash);
+    event RegisteredEncryptedRecord(address indexed registor, string ipfsMetadataHash, uint256 underlyingFileSize, uint256 tokenCost);
+    event PurchaseTxRecord(address indexed accesser, address indexed dataowner, uint256 tokenCost);
+    event RewardEvent(string msg, bool allowIpfsREgistration);
 
     constructor(address _ex_tok_addr, bool enableTokenEx, uint256 _pos) public {
         if (_ex_tok_addr == 0x0) revert("cannot interact with null contract");
@@ -125,7 +125,7 @@ contract RewardDistributor is SafeMath {
         require(ipfsMetaData[ipfsHash] == 0, "ipfs hash already registered"); // new record only
         ipfsMapping[msg.sender] = ipfsHash;
         ipfsMetaData[ipfsHash] = msg.sender;
-        emit RegisteredRecord(msg.sender, ipfsHash);
+        emit RegisteredFreeRecord(msg.sender, ipfsHash);
         // BMD token = filesize / defaultRewardFileSize e.g. 400GB / 200GB = 2 BMD
         uint256 bmd_token_granted = safeDiv(safeMul(filesize, 10**decimals), defaultRewardFileSize);
         if (InterfaceERC20(exchanging_token_addr).transfer(msg.sender, bmd_token_granted)) {
