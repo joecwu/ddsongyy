@@ -113,18 +113,18 @@ contract('Trade', function(accounts) {
     let web3Contract = null;
     let eventCounter = {}; // to track all events fired
     let erc20_contract = null;
-    let registry_contract = null;
+    let trade_contract = null;
 
     /* jshint ignore:start */
     before(async () => {
       context = await init_erc20_tok.run(accounts);
       erc20_contract = context.erc20tokInstance;
       assert(erc20_contract !== undefined, 'has been assigned with ERC20 contract instance');
-      registry_contract = (await trade_registry.deployed(erc20_contract.address, true, proof_of_stake_balance, {from: accounts[0]}));
-      web3Contract = web3.eth.contract(registry_contract.abi).at(registry_contract.address);
+      trade_contract = (await trade_registry.deployed(erc20_contract.address, true, proof_of_stake_balance, {from: accounts[0]}));
+      web3Contract = web3.eth.contract(trade_contract.abi).at(trade_contract.address);
       owner = web3Contract._eth.coinbase;
       logging('ERC20 Token Contract Address=' + erc20_contract.address);
-      logging('Trade Contract Address=' + registry_contract.address);
+      logging('Trade Contract Address=' + trade_contract.address);
       logging('accounts[0]=' + accounts[0]);
       logging('owner=' + owner + ' publicKeys[0]=' + publicKeys[0]);
       logging('other=' + accounts[1] + ' publicKeys[1]=' + publicKeys[1]);
@@ -137,7 +137,7 @@ contract('Trade', function(accounts) {
       }
   
       // Tracks all events for later verification, count may be sufficient?
-      registry_contract.allEvents({}, (error, details) => {
+      trade_contract.allEvents({}, (error, details) => {
         if (error) {
           console.error(error);
         } else {
@@ -152,16 +152,16 @@ contract('Trade', function(accounts) {
       let notOwnerPrivateKey = privateKeys[5];
       let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       // PRE-FUND this Trading Contract with ALL Tokens from accounts[0]
-      let pre_fund_completed = (await erc20_contract.transfer(registry_contract.address, pre_fund_amount, {from: accounts[0]}));
-      logging('Pre-funding registry_contract ' + registry_contract.address + ' with init token balance ' + pre_fund_amount);
+      let pre_fund_completed = (await erc20_contract.transfer(trade_contract.address, pre_fund_amount, {from: accounts[0]}));
+      logging('Pre-funding trade_contract ' + trade_contract.address + ' with init token balance ' + pre_fund_amount);
       let a0 = (await erc20_contract.balanceOf.call(accounts[0])).toNumber();
       let e0 = (await erc20_contract.balanceOf.call(erc20_contract.address)).toNumber();
-      let t0 = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
+      let t0 = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
       logging('accounts[0]=' + accounts[0] + ' has start token balance ' + a0);
       logging('erc20_contract.address=' + erc20_contract.address + ' has start token balance ' + e0);
-      logging('registry_contract.address=' + registry_contract.address + ' has start token balance ' + t0);
+      logging('trade_contract.address=' + trade_contract.address + ' has start token balance ' + t0);
       logging('publicKeys[5]=' + notOwner + ' has start token balance ' + notOwnerBalanceBefore);
-      logging('TradeContract contract address ' + registry_contract.address + ' has init Ether balance ' + web3.eth.getBalance(registry_contract.address));
+      logging('TradeContract contract address ' + trade_contract.address + ' has init Ether balance ' + web3.eth.getBalance(trade_contract.address));
       // assert.equal(t0, pre_fund_amount, "trader contract should be pre-funded with " + pre_fund_amount + " tokens from accounts[0]=" + accounts[0]);
 
       let value = 1; // 1 eth = 1 * 10 ** 18 wei. This needs to align with the contract
@@ -171,7 +171,7 @@ contract('Trade', function(accounts) {
       let result = await rawTransaction(
         notOwner,
         notOwnerPrivateKey,
-        registry_contract.address,
+        trade_contract.address,
         data,
         value
       );
@@ -179,12 +179,12 @@ contract('Trade', function(accounts) {
       let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       a0 = (await erc20_contract.balanceOf.call(accounts[0])).toNumber();
       e0 = (await erc20_contract.balanceOf.call(erc20_contract.address)).toNumber();
-      t0 = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
+      t0 = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
       logging(notOwner + ' has new token balance ' + notOwnerBalanceAfter);
       logging('accounts[0]=' + accounts[0] + ' has new token balance ' + a0);
       logging('erc20_contract.address=' + erc20_contract.address + ' has new token balance ' + e0);
-      logging('registry_contract.address=' + registry_contract.address + ' has new token balance ' + t0);
-      logging('RewardDistributor contract address ' + registry_contract.address + ' has new Ether balance ' + web3.eth.getBalance(registry_contract.address));
+      logging('trade_contract.address=' + trade_contract.address + ' has new token balance ' + t0);
+      logging('RewardDistributor contract address ' + trade_contract.address + ' has new Ether balance ' + web3.eth.getBalance(trade_contract.address));
 
       // assert.equal(notOwnerBalanceAfter, 10000, 'it should get 10000 tokens for 1 eth');
       // assert.equal(t0, 499990000, 'trader contract token should subtract 10000');
