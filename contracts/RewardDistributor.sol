@@ -9,6 +9,8 @@ contract RewardDistributor is SafeMath {
 
     // contract owner
     address public owner;
+    address public rewardexchanger;
+
     // The token contract is dealing with
     address public exchanging_token_addr;
     // activate token exchange, we can shut this down anytime by 'owner'
@@ -16,10 +18,9 @@ contract RewardDistributor is SafeMath {
     // activate ipfs registration, we can shut this down anytime by 'owner'
     bool public allowIpfsReg = true;
     uint256 public constant decimals = 18;
-    uint256 public exchangeRate = 200; // 1 eth = 200.000000000000000000 BMD
 
     // A simple constant reward at the moment
-    uint256 constant defaultRewardFileSize = 200 * 1000 * 1000 * 1000; // 1 tokens reward = 200GB (200,000,000,000)
+    uint256 public defaultRewardFileSize = 200 * 1000 * 1000 * 1000; // 1 tokens reward = 200GB (200,000,000,000)
     
     // proof of stake - minimal requirement for a wallet to be registered and active
     /**
@@ -61,6 +62,15 @@ contract RewardDistributor is SafeMath {
         _;
     }
 
+    // the master to set the exchange rate
+    modifier requiremaster() {
+        require(rewardexchanger != 0, "Reward exchanger not set, can't trigger any function!");
+        if (msg.sender != rewardexchanger) {
+            revert("caller is not the delegated exchange owner");
+        }
+        _;
+    }
+
     /** 
      Events to capture and notify
      */
@@ -69,6 +79,7 @@ contract RewardDistributor is SafeMath {
     event RegisteredEncryptedRecord(address indexed registor, string ipfsMetadataHash, uint256 underlyingFileSize, uint256 tokenCost);
     event PurchaseTxRecord(address indexed accesser, address indexed dataowner, uint256 tokenCost);
     event RewardEvent(string msg, bool allowIpfsREgistration);
+    event NewExchangeRate(string msg, uint256 newExchangeRate);
 
     constructor(address _ex_tok_addr, bool enableTokenEx, uint256 _pos) public {
         if (_ex_tok_addr == 0x0) revert("cannot interact with null contract");
@@ -76,7 +87,7 @@ contract RewardDistributor is SafeMath {
         exchanging_token_addr = _ex_tok_addr;
         allowTokenEx = enableTokenEx;
         pos = _pos;
-        if(exchangeRate < 0) revert("exchange rate cannot be negative");
+        if(defaultRewardFileSize < 0) revert("reward file size cannot be 0 nor negative");
         emit RewardEvent("allow ipfs registration", allowIpfsReg);
     }
 
@@ -89,26 +100,16 @@ contract RewardDistributor is SafeMath {
         emit RewardEvent("allow ipfs registration", allowIpfsReg);
     }
 
-    /**
-     * returns the fix-length of IPFS hash in a list for an address/wallet.
-     * This could become EXPENSIVE! Be aware! Always return 200 or less records.
-     * ipfsH1|ipfsH2|ipfsH3|...|ipfsHn where n = max record defined by 'defaultRecord'.
-     * the byte array length is always fix as (defaultRecord x 48)
-     */
-     /**
-    function queryIPFSList(address wallet) view public returns (string) {
-        // Return array type still experimental, ipfs hash are fix length
-        // e.g. QmarHSr9aSNaPSR6G9KFPbuLV9aEqJfTk1y9B8pdwqK4Rq
-        bytes memory ipfs_list = ipfsMapping[wallet]; // this is experimental
-        require(ipfs_list.length > 0);
-        uint total_record_len = 48 * defaultRecord;
-        bytes memory ipfs_bytes_list = new bytes(total_record_len);
-        for(uint i = 0; i < total_record_len; i++) {
-            ipfs_bytes_list[i] = ipfs_list[i];
-        }
-        return string(ipfs_bytes_list);
+    // Once contract owner set this, we no longer need the contract owner to update the exchange rate
+    function delegateExchangerAddress(address _exchanger) public restricted {
+        rewardexchanger = _exchanger;
     }
-    */
+
+    function setRewardExchangeRate(uint256 newRewardExRate) public requiremaster {
+        require(newRewardExRate > 0, "Exchange rate can never be set to 0 or negative");
+        defaultRewardFileSize = newRewardExRate;
+        emit NewExchangeRate("New reward exchange rate set", newRewardExRate);
+    }
 
     function queryIPFSList(address wallet) external view returns (string) {
         require(wallet != 0, "null address cannot be queried");

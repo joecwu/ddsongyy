@@ -9,7 +9,6 @@ var sha256coder = require('js-sha256').sha256;
 var proof_of_stake_balance = 100;
 var decimals = 18;
 /* jshint ignore:start */
-var eth_to_tok_exchangeRate = 200; // 1 eth = 200 BMD
 var filesize_to_token_ex = 200 * 1000 * 1000 * 1000; // 1token = 200GB
 var defaultTotalSupply = 1000000000 * 10**decimals; // 1billion * 10**18
 var pre_fund_amount = defaultTotalSupply / 2; // just use half of the token balance, leave 50% left in erc20 contract
@@ -216,8 +215,7 @@ contract('RewardDistributor', function(accounts) {
     let ipfs_test_filesize = 1599;
     let spent_ether = 0; // no eth should be exchanged in this contract
     /* jshint ignore:start */
-    let tokens_exchanged = eth_to_tok_exchangeRate * spent_ether * 10 ** 18;
-    let expected_balance = tokens_exchanged + ((ipfs_test_filesize * 10 ** 18) / filesize_to_token_ex);
+    let expected_balance = (ipfs_test_filesize * 10 ** 18) / filesize_to_token_ex;
     /* jshint ignore:end */
 
     /* jshint ignore:start */
@@ -259,8 +257,8 @@ contract('RewardDistributor', function(accounts) {
     it('should have pre-funded tokens before serving registry', async function() {
       let t0 = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
       logging('registry_contract=' + registry_contract.address + ' has init token balance ' + t0);
-      assert.equal(t0, pre_fund_amount - tokens_exchanged, "registry_contract " + registry_contract.address +
-        " contract should still have remaining " + (pre_fund_amount - tokens_exchanged) + " tokens from accounts[0]=" + accounts[0]);
+      assert.equal(t0, pre_fund_amount, "registry_contract " + registry_contract.address +
+        " contract should still have remaining " + pre_fund_amount + " tokens from accounts[0]=" + accounts[0]);
     });
 
     it('should be able to register IPFS hash for non-owner', async function() {
@@ -314,6 +312,7 @@ contract('RewardDistributor', function(accounts) {
     let eventCounter = {}; // to track all events fired
     let erc20_contract = null;
     let registry_contract = null;
+    let rewardexchanger = publicKeys[4]; // the wallet that can modify the exchange rate
 
     /* jshint ignore:start */
     before(async () => {
@@ -461,6 +460,34 @@ contract('RewardDistributor', function(accounts) {
 
     }); // end test case
 
+    it('should NOT be able to set reward exchange rate before it is delegated', async function() {
+      let tryCatch = require("./exceptions.js").tryCatch;
+      let errTypes = require("./exceptions.js").errTypes;
+      // Should trigger a revert
+      await tryCatch(registry_contract.setRewardExchangeRate(100 * 1000 * 1000 * 1000) , errTypes.revert);
+      let ex_rate = (await registry_contract.defaultRewardFileSize.call()).toNumber();
+      logging("Trading contract current exchange rate is " + ex_rate);
+      assert(ex_rate, filesize_to_token_ex, "exchange rate shall not change before delegation occurs!");
+      (await registry_contract.delegateExchangerAddress(rewardexchanger));
+      filesize_to_token_ex = 100 * 1000 * 1000 * 1000;
+      let shall_pass_result = (await registry_contract.setRewardExchangeRate(filesize_to_token_ex, {from: rewardexchanger}));
+      logging(shall_pass_result);
+      let new_ex_rate = (await registry_contract.defaultRewardFileSize.call()).toNumber();
+      assert(new_ex_rate, filesize_to_token_ex, "exchange rate shall not change before delegation occurs!");
+      logging("Trading contract new exchange rate is " + new_ex_rate);
+      let prev_ex_rate = filesize_to_token_ex;
+      filesize_to_token_ex = 200 * 1000 * 1000 * 1000;
+      // This should fail, even it is triggered from the contract owner or any other non-dedicated wallet
+      await tryCatch(registry_contract.setRewardExchangeRate(filesize_to_token_ex, {from: accounts[3]}) , errTypes.revert);
+      await tryCatch(registry_contract.setRewardExchangeRate(filesize_to_token_ex, {from: accounts[2]}) , errTypes.revert);
+      await tryCatch(registry_contract.setRewardExchangeRate(filesize_to_token_ex, {from: accounts[0]}) , errTypes.revert);
+      new_ex_rate = (await registry_contract.defaultRewardFileSize.call()).toNumber();
+      assert(new_ex_rate, prev_ex_rate, "exchange rate shall not change if it was triggered by the contract owner!");
+      shall_pass_result = (await registry_contract.setRewardExchangeRate(filesize_to_token_ex, {from: rewardexchanger}));
+      logging(shall_pass_result);
+      new_ex_rate = (await registry_contract.defaultRewardFileSize.call()).toNumber();
+      assert(new_ex_rate, filesize_to_token_ex, "exchange rate shall not change before delegation occurs!");
+    });
     /* jshint ignore:end */
   }); // end of describe
 
