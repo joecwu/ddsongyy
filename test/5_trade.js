@@ -209,9 +209,9 @@ contract('Trade', function(accounts) {
       let ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
       logging("Trading contract current exchange rate is " + ex_rate);
       assert(ex_rate, eth_to_tok_exchangeRate, "exchange rate shall not change before delegation occurs!");
-      (await trade_contract.delegateExchangerAddress(publicKeys[4]));
+      (await trade_contract.delegateExchangerAddress(pitmaster));
       eth_to_tok_exchangeRate = 999;
-      let shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: accounts[4]}));
+      let shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: pitmaster}));
       logging(shall_pass_result);
       let new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
       assert(new_ex_rate, eth_to_tok_exchangeRate, "exchange rate shall not change before delegation occurs!");
@@ -224,7 +224,7 @@ contract('Trade', function(accounts) {
       await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: accounts[0]}) , errTypes.revert);
       new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
       assert(new_ex_rate, prev_ex_rate, "exchange rate shall not change if it was triggered by the contract owner!");
-      shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: accounts[4]}));
+      shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: pitmaster}));
       logging(shall_pass_result);
       new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
       assert(new_ex_rate, eth_to_tok_exchangeRate, "exchange rate shall not change before delegation occurs!");
