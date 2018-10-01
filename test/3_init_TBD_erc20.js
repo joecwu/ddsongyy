@@ -5,7 +5,7 @@
  */
 var ERC20TOKEN = artifacts.require("./ERC20Token.sol");
 var tokenSymbol = "TBD";
-var contractName = "NoSilo";
+var contractName = "BlockMed";
 
 /* jshint ignore:start */
 async function initERC(accounts) {

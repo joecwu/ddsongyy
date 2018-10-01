@@ -181,48 +181,6 @@ contract RewardDistributor is SafeMath {
         return (ipfsHash, minimal_cost);
     }
 
-    /**
-      Eth exchanged to tokens are not spendable here. They are hold in this contract to purchase the
-      ipfsHash. The Eth fund will not be released and will be consumed by the contract to cover the disbursement
-      for the uploader's token, unless there is a refund for any reason.
-     */
-    function registerEscrow(string encryptedIndex) external payable {
-        require(bytes(encryptedIndex).length > 0, "cannot escrow an empty index");
-        require(decryptIpfs[encryptedIndex].price != 0, "invalid index query");
-        uint256 tokens = safeMul(safeMul(msg.value, 10**decimals), exchangeRate);
-        uint256 minimal_cost = decryptIpfs[encryptedIndex].price;
-        require(tokens > minimal_cost, "the eth deposited should exchange sufficient tokens for escrow");
-        escrowTokens[msg.sender] = tokens;
-    }
-
-    /**
-     The user needs to send the equivalant ETH that will be used to get tokens for the purchase.
-
-     encryptedIndex: the index to look up and pay tokens for the real IPFS hash
-     ipfsMetadataHash: the owner of the metadata to get reward
-
-     return: ipfsHash, token_cost
-    */
-    function decryptIPFSwithEth(string encryptedIndex, string ipfsMetadataHash) external returns (string, uint256) {
-        require(bytes(encryptedIndex).length > 0, "cannot query empty index");
-        // TBD: capture these to look for abuse?
-        // If price is 0, revert, the user does not need to call this function as well.
-        require(decryptIpfs[encryptedIndex].price != 0, "invalid index query");
-        uint256 escrow_token_balance = escrowTokens[msg.sender];
-        uint256 minimal_cost = decryptIpfs[encryptedIndex].price;
-        require(escrow_token_balance > minimal_cost, "the eth deposited should exchange sufficient tokens for purchase");
-        uint256 new_token_balance = safeSub(escrow_token_balance, minimal_cost);
-        escrowTokens[msg.sender] = new_token_balance;
-        address data_owner = ipfsMetaData[ipfsMetadataHash];
-        // Send purchase token from this contract first
-        require(InterfaceERC20(exchanging_token_addr).transfer(data_owner, minimal_cost), "Sending token to data owner failed");
-        // Claim the cost from the purchaser
-        require(InterfaceERC20(exchanging_token_addr).transferCost(msg.sender, minimal_cost), "Deduct token from purchaser to us");
-        emit PurchaseTxRecord(msg.sender, data_owner, minimal_cost);
-        string storage ipfsHash = decryptIpfs[encryptedIndex].ipfsHash;
-        return (ipfsHash, minimal_cost);
-    }
-
     function () public payable {
         revert("we do not accept payments here");
     }
