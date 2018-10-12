@@ -5,6 +5,7 @@ const EthereumTx = require('ethereumjs-tx');
 var init_erc20_tok = require("./3_init_TBD_erc20.js");
 var storage_registry = artifacts.require("./RewardDistributor.sol");
 var sha256coder = require('js-sha256').sha256;
+var crypto_js = require("crypto-js");
 
 var proof_of_stake_balance = 100;
 var decimals = 18;
@@ -82,6 +83,34 @@ function rawTransaction(
     });
   });
 } // end function
+
+// This is only for test, do NOT use this anywhere else. A dummy PRNG.
+function getRandomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+// This is only for test and prototype, do NOT use this anywhere else. A dummy random-length key generator.
+function genRandomKey() {
+  let text = "";
+  let possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let keylen = getRandomInt(128, 1024);
+  for (var i = 0; i < keylen; i++)
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  return text;
+}
+
+function shuffleString(str) {
+  var tmp, current, top = str.length;
+
+  if(top) while(--top) {
+      current = Math.floor(Math.random() * (top + 1));
+      tmp = str[current];
+      str[current] = str[top];
+      str[top] = tmp;
+  }
+
+  return str;
+}
 /***************************
  * END FUNCTION DEFINITION *
  ***************************/
@@ -375,53 +404,93 @@ contract('RewardDistributor', function(accounts) {
 
     it('should be able to register metadata and an encrypted hash by any user', async function() {
       let notOwner = publicKeys[6];
+      let expect_reward = (41 * 10**decimals) / filesize_to_token_ex;
       // The content for the IPFS hash is 'This is the content for testing.' excluding the single quote in the file.
       // The encryption here we use is a simple 1-way hash with SHA256SUM which derives:
       // c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be
-      let testIPFSData = "QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd";
-      // Metadata generated for above content in our test case is the following
-      let testMetadata = `{
-        "description": "whatever you want to put here",
-        "filesize": 41,
-        "encrypted": "c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be"
-      }`;
-      let normalized_testMetadata = JSON.stringify(JSON.parse(testMetadata));
-      let normalize_ipfsMetadata = "QmcN63TtxckH6gpjfScuVdJNxPcSni56KVzaywDfRwaR1j";
-      let encryptedIdx = sha256coder(testIPFSData);
-      let expect_reward = (41 * 10**decimals) / filesize_to_token_ex;
-      logging('normalized_json=' + normalized_testMetadata);
+      let realIPFSHash = "QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd";
+      let potential_key = "abcd1234ABCD1234"; // replace genRandomKey() with static password for predictable test
+      let l_rand = 113; // replace getRandomInt(113, 997) with predictable result for test
+      let ipfssha256 = sha256coder(realIPFSHash);
+      assert.equal(ipfssha256, 'c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be', 'sha256 lib not compatible, expecting sha256 c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be but got ' + ipfssha256);
+      // TODO: What is the chances of collision here?
+      let key2ndIdx = shuffleString(l_rand + ipfssha256 + sha256coder(potential_key));
+      logging("shuffled idx = " + key2ndIdx);
+      // Example: shuffle/encrypt real key to disguise
+      let c_gen = (await registry_contract.generateLocalRand(key2ndIdx, l_rand, {from: notOwner}));
+      logging("contract generate random number " + JSON.stringify(c_gen));
+      let c_rand = (await registry_contract.getLocalRand.call(key2ndIdx, {from: notOwner})).toNumber();
+      logging("contract return random number " + c_rand);
 
-      assert.equal(encryptedIdx, 'c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be', 'sha256 lib not compatible, expecting sha256 c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be but got ' + encryptedIdx);
+      let realKey = potential_key + c_rand; // predictable combination for FULL key
+      logging("generated encryption key = " + realKey);
+      let encryptedIPFSHash = crypto_js.AES.encrypt(realIPFSHash, realKey).toString();
+      logging("ipfs encrypted to " + encryptedIPFSHash);
+      // Decrypt test
+      let decryptIPFSHash = crypto_js.AES.decrypt(encryptedIPFSHash, realKey);
+      var originalText = decryptIPFSHash.toString(crypto_js.enc.Utf8);
+      logging("ipfs decrypted to " + originalText);
+      assert.equal(realIPFSHash, originalText, "aes encrypt and decrypt with same key error!");
+      // Metadata generated for above content in our test case is the following
+      let testMetadata = '{'
+      + '"description": ' + '"whatever you want to put here",'
+      + '"filesize": ' + '41,'
+      + '"encrypted": ' + '"' + ipfssha256 + '"'
+      + '}';
+      let normalized_testMetadata = JSON.stringify(JSON.parse(testMetadata));
+      logging('normalized_json=' + normalized_testMetadata);
+      let normalize_ipfsMetadata = "QmVuzUF8bsKtb9khL3mEnhkedH2buYveJCgnzzCJjvcsAo";
+
       let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       logging("current balance for publicKeys[6]=" + notOwner + " is " + notOwnerBalanceBefore);
-      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, encryptedIdx, testIPFSData, 41, {from: notOwner}))
+      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, potential_key, key2ndIdx, encryptedIPFSHash, 41, {from: notOwner}))
       logging('register encrypted IPFS status = ' + JSON.stringify(reg_successful.logs));
       let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       logging("new balance for publicKeys[6]=" + notOwner + " is " + notOwnerBalanceAfter);
       assert.equal(notOwnerBalanceAfter, expect_reward, "expected reward should be 205000000");
     }); // end test case
+ 
 
     it('should be able to register metadata and a 1G file by another user', async function() {
       let notOwner = publicKeys[7]; // uploading 1G
       let expect_reward = (1073741824 * 10**decimals) / filesize_to_token_ex;
       // a 1073741824 bytes file with all 0 in it.
-      // SHA256 = 49bc20df15e412a64472421e13fe86ff1c5165e18b2afccf160d4dc19fe68a14
-      let testIPFSData = "QmdiETTY5fiwTkJeERbWAbPKtzcyjzMEJTJJosrqo2qKNm";
-      // Metadata generated for above content in our test case is the following
-      let testMetadata = `{
-        "description": "an 1G file",
-        "filesize": 1073741824,
-        "encrypted": "92b73a3c06a93b0a5f8d0974efcae2d414015979f577679ae48f71ddf5ac2d33"
-      }`;
-      let normalized_testMetadata = JSON.stringify(JSON.parse(testMetadata));
-      let normalize_ipfsMetadata = "QmWqRJZghQftthJDVqJFNvB5ScatZFTp259sTAVesquLWv";
-      let encryptedIdx = sha256coder(testIPFSData);
-      logging('normalized_json=' + normalized_testMetadata);
+      let realIPFSHash = "QmdiETTY5fiwTkJeERbWAbPKtzcyjzMEJTJJosrqo2qKNm";
+      let potential_key = "xyzXY1234"; // replace genRandomKey() with static password for predictable test
+      let l_rand = 997; // replace getRandomInt(113, 997) with predictable result for test
+      let ipfssha256 = sha256coder(realIPFSHash);
+      assert.equal(ipfssha256, '92b73a3c06a93b0a5f8d0974efcae2d414015979f577679ae48f71ddf5ac2d33', 'sha256 lib not compatible, expecting sha256 92b73a3c06a93b0a5f8d0974efcae2d414015979f577679ae48f71ddf5ac2d33 but got ' + ipfssha256);
+      // TODO: What is the chances of collision here?
+      let key2ndIdx = shuffleString(l_rand + ipfssha256 + sha256coder(potential_key));
+      logging("shuffled idx = " + key2ndIdx);
+      // Example: shuffle/encrypt real key to disguise
+      let c_gen = (await registry_contract.generateLocalRand(key2ndIdx, l_rand, {from: notOwner}));
+      logging("contract generate random number " + JSON.stringify(c_gen));
+      let c_rand = (await registry_contract.getLocalRand.call(key2ndIdx, {from: notOwner})).toNumber();
+      logging("contract return random number " + c_rand);
 
-      assert.equal(encryptedIdx, '92b73a3c06a93b0a5f8d0974efcae2d414015979f577679ae48f71ddf5ac2d33', 'sha256 lib not compatible, expecting sha256 92b73a3c06a93b0a5f8d0974efcae2d414015979f577679ae48f71ddf5ac2d33 but got ' + encryptedIdx);
+      let realKey = potential_key + c_rand; // predictable combination for FULL key
+      logging("generated encryption key = " + realKey);
+      let encryptedIPFSHash = crypto_js.AES.encrypt(realIPFSHash, realKey).toString();
+      logging("ipfs encrypted to " + encryptedIPFSHash);
+      // Decrypt test
+      let decryptIPFSHash = crypto_js.AES.decrypt(encryptedIPFSHash, realKey);
+      var originalText = decryptIPFSHash.toString(crypto_js.enc.Utf8);
+      logging("ipfs decrypted to " + originalText);
+      assert.equal(realIPFSHash, originalText, "aes encrypt and decrypt with same key error!");
+      // Metadata generated for above content in our test case is the following
+      let testMetadata = '{'
+      + '"description": ' + '"an 1G file",'
+      + '"filesize": ' + '1073741824,'
+      + '"encrypted": ' + '"' + ipfssha256 + '"'
+      + '}';
+      let normalized_testMetadata = JSON.stringify(JSON.parse(testMetadata));
+      logging('normalized_json=' + normalized_testMetadata);
+      let normalize_ipfsMetadata = "QmWqRJZghQftthJDVqJFNvB5ScatZFTp259sTAVesquLWv";
+
       let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       logging("current balance for publicKeys[7]=" + notOwner + " is " + notOwnerBalanceBefore);
-      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, encryptedIdx, testIPFSData, 1073741824, {from: notOwner}))
+      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, potential_key, key2ndIdx, encryptedIPFSHash, 1073741824, {from: notOwner}))
       logging('register encrypted IPFS status = ' + JSON.stringify(reg_successful.logs));
       let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       logging("new balance for publicKeys[7]=" + notOwner + " is " + notOwnerBalanceAfter);
@@ -434,8 +503,7 @@ contract('RewardDistributor', function(accounts) {
     it('should be able to buy and retrieve the IPFS hash by any user with tokens', async function() {
       let uploader = publicKeys[6];
       let purchaser = publicKeys[7];
-      let normalize_ipfsMetadata = "QmcN63TtxckH6gpjfScuVdJNxPcSni56KVzaywDfRwaR1j";
-      let encryptedIdx = "c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be";
+      let normalize_ipfsMetadata = "QmVuzUF8bsKtb9khL3mEnhkedH2buYveJCgnzzCJjvcsAo";
 
       let uploaderBalance = (await erc20_contract.balanceOf.call(uploader)).toNumber();
       logging("existing balance for " + uploader + " is " + uploaderBalance);
@@ -443,12 +511,16 @@ contract('RewardDistributor', function(accounts) {
 
       let purchaserBalance = (await erc20_contract.balanceOf.call(purchaser)).toNumber();
       logging("existing balance for " + purchaser + " is " + purchaserBalance);
-      assert.equal(purchaserBalance, 5368709120000000, "expected existing balance to be 5368709120000000");
+      // assert.equal(purchaserBalance, 5368709120000000, "expected existing balance to be 5368709120000000");
 
-      let results = (await registry_contract.decryptIPFS.call(encryptedIdx, normalize_ipfsMetadata, {from: purchaser}))
-      logging('fetching decrypted IPFS hash = ' + results[0] + " and token cost = " + results[1]);
-      assert.equal(results[0], "QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd", "Expecting the real IPFS decrupted hash to be QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd");
-      assert.equal(results[1], 205000000, "The cost to purchase encryptedIdx c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be should be 205000000");
+      let results = (await registry_contract.decryptIPFS.call(normalize_ipfsMetadata, {from: purchaser}))
+      logging('fetching decrypted IPFS hash pkey = ' + results[0]);
+      logging('fetching decrypted IPFS hash rkey = ' + results[1]);
+      logging('fetching decrypted IPFS hash encryptedIpfs = ' + results[2]);
+      logging('fetching decrypted IPFS hash cost = ' + results[3]);
+      assert.equal(results[0], "abcd1234ABCD1234", "Expecting the pkey to be abcd1234ABCD1234");
+      assert.equal(results[1], 8, "Expecting the remote random number to be 8");
+      assert.equal(results[3], 205000000, "Expecting the minimal cost to be 205000000");
 
       let uploaderNewBalance = (await erc20_contract.balanceOf.call(uploader)).toNumber();
       logging("new balance for " + uploader + " is " + uploaderNewBalance);

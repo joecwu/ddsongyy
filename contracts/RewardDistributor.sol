@@ -30,14 +30,13 @@ contract RewardDistributor is SafeMath {
     */
     uint256 public pos;
 
-    /**
-    * Data contribution from wallets, e.g. wallet => set[IPFS hash].
-    */
-    uint8 constant defaultRecord = 1; // only record up to 200, and start rotating. FIFO.
-    // mapping (address => bytes) public ipfsMapping; // record all IPFS registry per wallet? not economicable!
-    mapping (address => string) private ipfsMapping; // record ONLY one IPFS registry per wallet for now - prototype
+    // wallet => ipfs
+    mapping (address => string) private ipfsMapping; // record ONLY encrypted IPFS registry per wallet for now - prototype
+
+    // ipfs => wallet 
     // like the title for property, First come first serve
     mapping (string => address) private ipfsMetaData;
+
     /** 
     Provides the real IPFS hash when user call and pay for the proper token value.
       price: token to purchase ipfs hash
@@ -45,12 +44,14 @@ contract RewardDistributor is SafeMath {
     */
     struct ipfsPayment {
         uint256 price;
-        string  ipfsHash;
+        string  ipfsKeyIdx; // to fetch the key to decrypt
+        string  encryptedIpfs;
     }
     // unique string map to the correct Ipfs Payment record
     mapping (string => ipfsPayment) private decryptIpfs;
-    // escrow account, wallet <=> token amount
-    mapping (address => uint256) private escrowTokens;
+    mapping (string => uint256) private randomNess;
+    // variable length keys here
+    mapping (string => bytes) private decryptKeys; 
     
     // TODO: Introduce penalties (lien) to hold rewards or wallet removal for bad actors
     // mapping (address => bool) blacklist;
@@ -136,21 +137,49 @@ contract RewardDistributor is SafeMath {
         }
     }
 
+    // Returns a random number for users to shuffle their key, etc.
+    function generateLocalRand(string keyLookupIdx, uint256 seed) external returns (bool) {
+        // This is really just a dummy picker on the seed from the user
+        uint256 s = safeDiv(seed, 13);
+        randomNess[keyLookupIdx] = s;
+        return true;
+    }
+
+    function getLocalRand(string keyLookupIdx) external view returns (uint256) {
+        return randomNess[keyLookupIdx];
+    }
+
+    function registerKey(string keyLookupIdx, bytes key) internal returns(bool) {
+        decryptKeys[keyLookupIdx] = key;
+    }
+
+    function fetchKey(string keyLookupIdx) private view returns(bytes) {
+        return decryptKeys[keyLookupIdx];
+    }
+
     /**
       ipfsMetadataHash: metadata IPFS content hash
-      encryptedIndex: a SHA256 value as index for this record
-      ipfsHash: the real IPFS hash for the underlying file/content
-      realFilesize: The real file size for ipfsHash
+      keyLookupIdx: a SHA256 value as index for this record
+      ipfsEncryptedHash: the real IPFS hash for the underlying file/content
+      realFilesize: The real file size for the uploaded ipfs file
      */
-    function encryptIPFS(string ipfsMetadataHash, string encryptedIndex, string ipfsHash, uint256 realFilesize) external payable returns (bool) {
-        require(bytes(ipfsHash).length > 0, "cannot store empty ipfs hash"); // can't register empty hash
+    function encryptIPFS(
+        string ipfsMetadataHash, 
+        string partialKey, 
+        string indirectKeyIdx,
+        string ipfsEncryptedHash, 
+        uint256 realFilesize) external payable returns (bool) 
+        {
+        require(bytes(ipfsEncryptedHash).length > 0, "cannot store empty ipfs hash"); // can't register empty hash
         require(bytes(ipfsMetadataHash).length > 0, "cannot store empty ipfs metadata hash"); // can't register empty hash
         require(ipfsMetaData[ipfsMetadataHash] == 0, "ipfs metadata hash already registered"); // new record only
         // BMD token = filesize / defaultRewardFileSize e.g. 400GB / 200GB = 2 BMD
         uint256 bmd_token_cost = safeDiv(safeMul(realFilesize, 10**decimals), defaultRewardFileSize);
         ipfsMetaData[ipfsMetadataHash] = msg.sender;
-        decryptIpfs[encryptedIndex].price = bmd_token_cost;
-        decryptIpfs[encryptedIndex].ipfsHash = ipfsHash;
+        decryptIpfs[ipfsMetadataHash].price = bmd_token_cost;
+        decryptIpfs[ipfsMetadataHash].ipfsKeyIdx = indirectKeyIdx;
+        decryptIpfs[ipfsMetadataHash].encryptedIpfs = ipfsEncryptedHash;
+        decryptKeys[indirectKeyIdx] = bytes(partialKey);
         // This refers to the encrypted ones
         emit RegisteredEncryptedRecord(msg.sender, ipfsMetadataHash, realFilesize, bmd_token_cost);
         if (InterfaceERC20(exchanging_token_addr).transfer(msg.sender, bmd_token_cost)) {
@@ -162,24 +191,27 @@ contract RewardDistributor is SafeMath {
     }
 
     /**
-     encryptedIndex: the index to look up and pay tokens for the real IPFS hash
+     keyLookupIdx: the index to look up and pay tokens for the real IPFS hash
      ipfsMetadataHash: the owner of the metadata to get reward
 
      return: ipfsHash, token_cost
      */
-    function decryptIPFS(string encryptedIndex, string ipfsMetadataHash) external returns (string, uint256) {
-        require(bytes(encryptedIndex).length > 0, "cannot query empty index");
+    function decryptIPFS(string ipfsMetadataHash) external returns (string, uint256, string, uint256) {
+        require(bytes(ipfsMetadataHash).length > 0, "cannot query empty index");
         // TBD: capture these to look for abuse?
         // If price is 0, revert, the user does not need to call this function as well.
-        require(decryptIpfs[encryptedIndex].price != 0, "invalid index query");
-        uint256 minimal_cost = decryptIpfs[encryptedIndex].price;
+        require(decryptIpfs[ipfsMetadataHash].price != 0, "invalid index query");
+        uint256 minimal_cost = decryptIpfs[ipfsMetadataHash].price;
         address data_owner = ipfsMetaData[ipfsMetadataHash];
         require(data_owner != 0, "wallet address invalid");
         require(InterfaceERC20(exchanging_token_addr).transfer(data_owner, minimal_cost), "Sending token to data owner failed");
         require(InterfaceERC20(exchanging_token_addr).transferCost(msg.sender, minimal_cost), "Deduct token from purchaser to us");
         emit PurchaseTxRecord(msg.sender, data_owner, minimal_cost);
-        string storage ipfsHash = decryptIpfs[encryptedIndex].ipfsHash;
-        return (ipfsHash, minimal_cost);
+        string storage indirectKeyIdx = decryptIpfs[ipfsMetadataHash].ipfsKeyIdx;
+        string storage encIpfs = decryptIpfs[ipfsMetadataHash].encryptedIpfs;
+        string storage pkey = string(decryptKeys[indirectKeyIdx]);
+        uint256 rkey = randomNess[indirectKeyIdx];
+        return (pkey, rkey, encIpfs, minimal_cost);
     }
 
     function () public payable {
