@@ -1,4 +1,5 @@
 /*jshint esversion: 6*/
+const BigNumber = web3.BigNumber;
 const privateKeys = require('./truffle-keys').private;
 const publicKeys = require('./truffle-keys').public;
 const EthereumTx = require('ethereumjs-tx');
@@ -7,14 +8,14 @@ var trade_registry = artifacts.require("./TradeContract.sol");
 
 var proof_of_stake_balance = 100;
 var decimals = 18;
+var eth_to_tok_exchangeRate = new BigNumber(200); // 1 eth = 200 BMD
 /* jshint ignore:start */
-var eth_to_tok_exchangeRate = 200; // 1 eth = 200 BMD
-var defaultTotalSupply = 1000000000 * 10**decimals; // 1billion * 10**18
-var pre_fund_amount = defaultTotalSupply / 2; // just use half of the token balance, leave 50% left in erc20 contract
+var eth_to_wei = new BigNumber(10**decimals);
 /* jshint ignore:end */
-// var initAllocationForEscrow = 500000000000000000000000000; // 500m * 10**18
-var initAllocationForEscrow = 0; // creator gets all
-var contractCreatorRemainBalance = (defaultTotalSupply - initAllocationForEscrow); // account[0]
+var defaultTotalSupply = new BigNumber(1000000000).mul(eth_to_wei); // 1billion * 10**18
+var pre_fund_amount = new BigNumber(1000000).mul(eth_to_wei); // 1M init token for trading
+// fund traing and reward contract 1M each
+var contractCreatorRemainBalance = defaultTotalSupply.minus(pre_fund_amount.times(2)); // account[0]
 
 
 /***********************
@@ -90,24 +91,25 @@ contract('Trade', function(accounts) {
       assert(erc20tok !== undefined, 'has been assigned with ERC20 contract instance');
     });
 
-    it(accounts[0] + " should have init balance of " + (defaultTotalSupply - initAllocationForEscrow) + " TBD tokens by default", async function() {
-      let registry_instance = null;
+    it(accounts[0] + " should have init balance of " + contractCreatorRemainBalance + " TBD tokens by default", async function() {
+      let trade_instance = null;
 
-      registry_instance = await trade_registry.deployed(erc20tok.address, true, proof_of_stake_balance, {from: accounts[1]});
+      trade_instance = await trade_registry.deployed(erc20tok.address, true, {from: accounts[1]});
       let balance = (await erc20tok.balanceOf.call(accounts[0])).toNumber();
       assert.equal(balance.valueOf(),
                    contractCreatorRemainBalance,
                    contractCreatorRemainBalance + " wasn't in the first account " + accounts[0]);
       console.log('TradeContract deployed with address ' +
-                  registry_instance.address +
+      trade_instance.address +
                   ' trading erc20 token address ' +
                   erc20tok.address);
-      let erc20_addr = (await registry_instance.currentTokenContract.call());
+      let erc20_addr = (await trade_instance.currentTokenContract.call());
       assert.equal(erc20_addr,
                   erc20tok.address,
                   'TradeContract contract should hold ERC20 contract address ' + erc20tok.address);
     });
-  });
+    /* jshint ignore:end */
+  }); // end of describe
 
   describe("TradeContract exchanging token with Ether test cases", function() {
     let web3Contract = null;
@@ -121,7 +123,7 @@ contract('Trade', function(accounts) {
       context = await init_erc20_tok.run(accounts);
       erc20_contract = context.erc20tokInstance;
       assert(erc20_contract !== undefined, 'has been assigned with ERC20 contract instance');
-      trade_contract = (await trade_registry.deployed(erc20_contract.address, true, proof_of_stake_balance, {from: accounts[0]}));
+      trade_contract = (await trade_registry.deployed(erc20_contract.address, true, {from: accounts[0]}));
       web3Contract = web3.eth.contract(trade_contract.abi).at(trade_contract.address);
       owner = web3Contract._eth.coinbase;
       logging('ERC20 Token Contract Address=' + erc20_contract.address);
@@ -151,6 +153,9 @@ contract('Trade', function(accounts) {
           eventCounter[details.event] = count ? count + 1 : 1;
         }
       });
+
+      // only trade contract can interact with erc20 contarct to replenish itself
+      (await erc20_contract.register_tradingcontract(trade_contract.address));
     });
 
     it('should be able to exchangeToken for non-owner', async function() {
@@ -189,7 +194,7 @@ contract('Trade', function(accounts) {
       e0 = (await erc20_contract.balanceOf.call(erc20_contract.address)).toNumber();
       t0 = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
       logging(notOwner + ' has new token balance ' + notOwnerBalanceAfter);
-      assert(notOwnerBalanceAfter, eth_to_tok_exchangeRate * 10**decimals, "should have new token balance " + eth_to_tok_exchangeRate * 10**decimals);
+      assert(notOwnerBalanceAfter, eth_to_tok_exchangeRate.mul(eth_to_wei).toNumber(), "should have new token balance " + eth_to_tok_exchangeRate.mul(eth_to_wei));
       logging('accounts[0]=' + accounts[0] + ' has new token balance ' + a0);
       logging('erc20_contract.address=' + erc20_contract.address + ' has new token balance ' + e0);
       logging('trade_contract.address=' + trade_contract.address + ' has new token balance ' + t0);
@@ -208,30 +213,129 @@ contract('Trade', function(accounts) {
       await tryCatch(trade_contract.setExchangeRate(999) , errTypes.revert);
       let ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
       logging("Trading contract current exchange rate is " + ex_rate);
-      assert(ex_rate, eth_to_tok_exchangeRate, "exchange rate shall not change before delegation occurs!");
+      assert(ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
       (await trade_contract.delegateExchangerAddress(pitmaster));
-      eth_to_tok_exchangeRate = 999;
-      let shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: pitmaster}));
+      eth_to_tok_exchangeRate = new BigNumber(999);
+      let shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: pitmaster}));
       logging(shall_pass_result);
       let new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
-      assert(new_ex_rate, eth_to_tok_exchangeRate, "exchange rate shall not change before delegation occurs!");
+      assert(new_ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
       logging("Trading contract new exchange rate is " + new_ex_rate);
-      let prev_ex_rate = eth_to_tok_exchangeRate;
-      eth_to_tok_exchangeRate = 200;
+      let prev_ex_rate = eth_to_tok_exchangeRate.toNumber();
+      eth_to_tok_exchangeRate = new BigNumber(200);
       // This should fail, even it is triggered from the contract owner or any other non-dedicated wallet
-      await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: accounts[3]}) , errTypes.revert);
-      await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: accounts[2]}) , errTypes.revert);
-      await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: accounts[0]}) , errTypes.revert);
+      await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: accounts[3]}) , errTypes.revert);
+      await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: accounts[2]}) , errTypes.revert);
+      await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: accounts[0]}) , errTypes.revert);
       new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
       assert(new_ex_rate, prev_ex_rate, "exchange rate shall not change if it was triggered by the contract owner!");
-      shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate, {from: pitmaster}));
+      shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: pitmaster}));
       logging(shall_pass_result);
       new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
-      assert(new_ex_rate, eth_to_tok_exchangeRate, "exchange rate shall not change before delegation occurs!");
+      assert(new_ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
     });
     /* jshint ignore:end */
 
   }); // end of describe
 
-  /* jshint ignore:end */
+  describe("TradeContract should be able to replenish itself", function() {
+    let web3Contract = null;
+    let eventCounter = {}; // to track all events fired
+    let erc20_contract = null;
+    let trade_contract = null;
+    let default_init_balance = pre_fund_amount;
+    let pitmaster = publicKeys[4]; // the wallet that can modify the exchange rate
+    let rediculous_tok_exchangeRate = new BigNumber(900001);
+
+    /* jshint ignore:start */
+    before(async () => {
+      context = await init_erc20_tok.run(accounts);
+      erc20_contract = context.erc20tokInstance;
+      assert(erc20_contract !== undefined, 'has been assigned with ERC20 contract instance');
+      trade_contract = (await trade_registry.deployed(erc20_contract.address, true, {from: accounts[0]}));
+      web3Contract = web3.eth.contract(trade_contract.abi).at(trade_contract.address);
+      owner = web3Contract._eth.coinbase;
+      logging('ERC20 Token Contract Address=' + erc20_contract.address);
+      logging('Trade Contract Address=' + trade_contract.address);
+      logging('accounts[0]=' + accounts[0]);
+      logging('owner=' + owner + ' publicKeys[0]=' + publicKeys[0]);
+      logging('other=' + accounts[1] + ' publicKeys[1]=' + publicKeys[1]);
+      let other = publicKeys[1];
+
+      // Verifying that you have specified the right key for testing in ganache-cli
+      if (publicKeys[0] !== owner || publicKeys[1] !== other) {
+        throw new Error('Use `truffle develop` and store the keys in ./test/truffle-keys.js' +
+        ', and make sure you specify these keys in ganache-cli');
+      }
+
+      if (publicKeys[7] === owner) {
+        throw new Error('The 7th publicKeys[7] shall not be the same as the owner that deploys this contract' +
+        ', we use publicKeys[7] for testing in our test cases for such purposes.');
+      }
+  
+      // Tracks all events for later verification, count may be sufficient?
+      trade_contract.allEvents({}, (error, details) => {
+        if (error) {
+          console.error(error);
+        } else {
+          let count = eventCounter[details.event];
+          eventCounter[details.event] = count ? count + 1 : 1;
+        }
+      });
+
+      // only trade contract can interact with erc20 contarct to replenish itself
+      (await erc20_contract.register_tradingcontract(trade_contract.address));
+      // allow us to set exchange rate to a rediculous value to trigger the test case
+      (await trade_contract.delegateExchangerAddress(pitmaster));
+
+      let before_balance = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
+      default_init_balance = new BigNumber(before_balance);
+      logging('trade contract ' + trade_contract.address + ' has init balance ' + default_init_balance);
+      shall_pass_result = (await trade_contract.setExchangeRate(rediculous_tok_exchangeRate.toNumber(), {from: pitmaster}));
+      logging(shall_pass_result);
+    });
+
+    it('should be able to replenish token for non-owner tx', async function() {
+      let notOwner = publicKeys[7];
+      let notOwnerPrivateKey = privateKeys[7];
+      let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
+      let a0 = (await erc20_contract.balanceOf.call(accounts[0])).toNumber();
+      let t0 = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
+      let initEthbalance = web3.eth.getBalance(publicKeys[7]);
+      logging('accounts[0]=' + accounts[0] + ' has start token balance ' + a0);
+      logging('trade_contract.address=' + trade_contract.address + ' has start token balance ' + t0);
+      logging('publicKeys[7]=' + notOwner + ' has start token balance ' + notOwnerBalanceBefore);
+      logging('publicKeys[7]=' + notOwner + ' has init Ether balance ' + initEthbalance);
+      logging('TradeContract contract address ' + trade_contract.address + ' has init Ether balance ' + web3.eth.getBalance(trade_contract.address));
+      
+      let value = 2.2 * 10 ** 18; // 1 eth = 1 * 10 ** 18 wei.
+
+      let data = web3Contract.takerBuyAsset.getData();
+
+      let result = await rawTransaction(
+        notOwner,
+        notOwnerPrivateKey,
+        trade_contract.address,
+        data,
+        value
+      );
+
+      let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
+      a0 = (await erc20_contract.balanceOf.call(accounts[0])).toNumber();
+      t0 = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
+      logging(notOwner + ' has new token balance ' + notOwnerBalanceAfter);
+      assert(notOwnerBalanceAfter, rediculous_tok_exchangeRate.mul(eth_to_wei).toNumber(), "should have new token balance " + rediculous_tok_exchangeRate.mul(eth_to_wei));
+      logging('accounts[0]=' + accounts[0] + ' has new token balance ' + a0);
+      logging('trade_contract.address=' + trade_contract.address + ' has new token balance ' + t0);
+      logging('publicKeys[7]=' + notOwner + ' has new Ether balance ' + web3.eth.getBalance(publicKeys[7]));
+      logging('TradeContract contract address ' + trade_contract.address + ' has new Ether balance ' + web3.eth.getBalance(trade_contract.address));
+      assert(web3.eth.getBalance(trade_contract.address), value, "Trading contract received eth is not the same as " + value);
+      assert.isAtMost(web3.eth.getBalance(publicKeys[7]), (initEthbalance - value), "The full " + value + " did not reach the Trading contract");
+      assert.strictEqual(0, result.indexOf('0x')); 
+    });
+    /* jshint ignore:end */
+
+  }); // end of describe
+
+
 }); // end of contract

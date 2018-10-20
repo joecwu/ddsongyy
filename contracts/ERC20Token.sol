@@ -39,6 +39,7 @@ interface InterfaceERC20 {
     function allowance(address _owner, address _spender) external view returns (uint256);
     // Custom function
     function transferCost(address purchaser, uint256 _value) external returns (bool);
+    function replenishTradeContract() external returns (bool);
     // Triggered when tokens are transferred.
     event Transfer(address indexed _from, address indexed _to, uint256 _tokenAmount);
     // Triggered whenever approve(address _spender, uint256 _value) is called.
@@ -51,6 +52,8 @@ contract ERC20Token is SafeMath, InterfaceERC20 {
     address public owner;
     // reward contract address
     address public reward_contract = 0;
+    // trading contract address
+    address public trade_contract = 0;
 
     mapping (address => uint256) _balances;
     mapping (address => mapping (address => uint256)) public allowed;
@@ -58,12 +61,14 @@ contract ERC20Token is SafeMath, InterfaceERC20 {
     string public name;
     string public symbol;
     uint256 public constant decimals = 18; // the decimal here aligns with the 'byte' unit and our definition
-    uint256 public constant TOTALSUPPLY = 10 ** decimals * 1000000000; // 1 billion token
+    uint256 private constant eth_to_wei = 10 ** decimals;
+    uint256 public constant tokenSupply = 1000000000;
+    uint256 public TOTALSUPPLY = tokenSupply * eth_to_wei; // 1 billion token
     // activate token sale
     bool public allowTokenSale = true;
     // fund allocation
     // uint256 public constant escrowToken = 10 ** decimals * 500000000; // 500m tokens
-    uint256 public constant escrowToken = TOTALSUPPLY; // Give all tokens to the creator of this token
+    uint256 public constant escrowToken = tokenSupply * eth_to_wei; // Give all tokens to the creator of this token
 
     event Transfer(address indexed _from, address indexed _to, uint256 _value);
     event Approval(address indexed _owner, address indexed _spender, uint256 _value);
@@ -79,6 +84,14 @@ contract ERC20Token is SafeMath, InterfaceERC20 {
         require(reward_contract != 0, "Reward contract not set, can't trigger any function!");
         if (msg.sender != reward_contract) {
             revert("caller is not reward contract owner");
+        }
+        _;
+    }
+
+    modifier tradeContractOnly() {
+        require(trade_contract != 0, "Trade contract not set, can't trigger any function!");
+        if (msg.sender != trade_contract) {
+            revert("caller is not trade contract owner");
         }
         _;
     }
@@ -100,7 +113,7 @@ contract ERC20Token is SafeMath, InterfaceERC20 {
     }
 
     // remaining total supply
-    function totalSupply() public pure returns (uint256) {
+    function totalSupply() public view returns (uint256) {
         return TOTALSUPPLY;
     }
     
@@ -182,7 +195,29 @@ contract ERC20Token is SafeMath, InterfaceERC20 {
         emit Transfer(purchaser, reward_contract, _value);
         return true;
     }
-    
+
+    function register_tradingcontract(address trade_addr) public restricted {
+        trade_contract = trade_addr;
+    }
+
+    function replenishTradeContract() public tradeContractOnly returns (bool) {
+        // total supply is dropping under 1M, raising total supply!
+        if (_balances[owner] < 1000000) {
+            // add 1 billion token at a time, raising total supply cap
+            TOTALSUPPLY = TOTALSUPPLY + (tokenSupply * eth_to_wei);
+            _balances[owner] = safeAdd(_balances[owner], tokenSupply * eth_to_wei);
+        }
+        // IF less than 100K, replenish 1M
+        if (_balances[trade_contract] < 100000) {
+            // replenish trading contract 1M at a time
+            uint256 mmtoks = 1000000 * eth_to_wei;
+            _balances[trade_contract] = safeAdd(_balances[trade_contract], mmtoks);
+            _balances[owner] = safeSub(_balances[owner], mmtoks);
+            emit Transfer(owner, trade_contract, mmtoks);
+        }
+        return true;
+    }
+
     /**
      * Prevent eth coming in by accident
      */

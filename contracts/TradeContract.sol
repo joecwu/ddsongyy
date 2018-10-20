@@ -1,4 +1,4 @@
-pragma solidity ^0.4.20;
+pragma solidity ^0.4.24;
 
 import "./ERC20Token.sol";
 
@@ -21,6 +21,9 @@ contract TradeContract is SafeMath {
 
     // This exchange rate is calculated magically and set by a seperate process
     uint256 public exchangeRate = 200; // 1 eth = 200.000000000000000000 USD = 200 BMD
+
+    // This defines the threshold to replenish the holding tokens in this contract
+    uint256 private constant replenish_threshold = 100000;
 
     modifier restricted() {
         if (msg.sender != owner) {
@@ -73,6 +76,18 @@ contract TradeContract is SafeMath {
         emit NewExchangeRate("New exchange rate set", newExRate);
     }
 
+    /**
+    This is an auto-check to replenish the pool of funds for trading autonomously.
+    We also restrict this function access to this contract only and the contract owner.
+    */
+    function replenishFund() internal {
+        uint256 contract_balance = InterfaceERC20(exchanging_token_addr).balanceOf(address(0));
+        if (contract_balance < replenish_threshold) {
+            // trigger replenish request
+            require(InterfaceERC20(exchanging_token_addr).replenishTradeContract(), "Replenish Trade contract failed!");
+        }
+    }
+
     function takerBuyAsset() public payable {
         if (allowTokenEx || msg.sender == owner) {
             // Note that exchangeRate has already been validated as > 0
@@ -82,6 +97,7 @@ contract TradeContract is SafeMath {
             // This means, you will need Token balance under THIS CONTRACT!!!!!!!!!!!!!!!!!!!!!!
             require(InterfaceERC20(exchanging_token_addr).transfer(msg.sender, tokens), "Exchanged token transfer failed!");
             emit ExchangeTokens(msg.sender, msg.value, tokens);
+            replenishFund();
         }
         else
         {
