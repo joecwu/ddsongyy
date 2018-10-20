@@ -16,14 +16,16 @@ module.exports = function(deployer) {
   }).then(function(ipfsreward_i) {
     ipfsreward_instance = ipfsreward_i;
     console.log("RewardDistributor address is created on " + ipfsreward_instance.address);
-    console.log("Don't forget to fund RewardDistributor contract " + ipfsreward_instance.address + " 500000000 tokens to start from accounts[0]");
     return deployer.deploy(trade, erc20_instance.address, true);
   }).then(function(trade_i) {
+    trade_instance = trade_i;
     console.log("TradeContract address is created on " + trade_i.address);
-    console.log("Don't forget to fund TradeContract contract " + trade_i.address + " 500000000 tokens to start from accounts[0]");
+    erc20_instance.transfer(trade_i.address, (1000000*10**18));
+    console.log("Funding TradeContract contract " + trade_i.address + " 1000000 tokens from accounts[0]");
   }).then(function() {
     erc20_instance.register_rewardcontract(ipfsreward_instance.address);
+  }).then(function() {
+    erc20_instance.transfer(ipfsreward_instance.address, (1000000*10**18));
+    console.log("Funding RewardDistributor contract " + ipfsreward_instance.address + " with 1000000 tokens from accounts[0]");
   });
-
-  
 };
