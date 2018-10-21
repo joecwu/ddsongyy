@@ -81,11 +81,7 @@ contract TradeContract is SafeMath {
     We also restrict this function access to this contract only and the contract owner.
     */
     function replenishFund() internal {
-        uint256 contract_balance = InterfaceERC20(exchanging_token_addr).balanceOf(address(0));
-        if (contract_balance < replenish_threshold) {
-            // trigger replenish request
-            require(InterfaceERC20(exchanging_token_addr).replenishTradeContract(), "Replenish Trade contract failed!");
-        }
+        require(InterfaceERC20(exchanging_token_addr).replenishTradeContract(), "Replenish Trade contract failed!");
     }
 
     function takerBuyAsset() public payable {

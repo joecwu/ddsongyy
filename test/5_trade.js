@@ -6,7 +6,6 @@ const EthereumTx = require('ethereumjs-tx');
 var init_erc20_tok = require("./3_init_TBD_erc20.js");
 var trade_registry = artifacts.require("./TradeContract.sol");
 
-var proof_of_stake_balance = 100;
 var decimals = 18;
 var eth_to_tok_exchangeRate = new BigNumber(200); // 1 eth = 200 BMD
 /* jshint ignore:start */
@@ -16,7 +15,7 @@ var defaultTotalSupply = new BigNumber(1000000000).mul(eth_to_wei); // 1billion 
 var pre_fund_amount = new BigNumber(1000000).mul(eth_to_wei); // 1M init token for trading
 // fund traing and reward contract 1M each
 var contractCreatorRemainBalance = defaultTotalSupply.minus(pre_fund_amount.times(2)); // account[0]
-
+var trade_contract_eth_balance = new BigNumber(0);
 
 /***********************
  * FUNCTION DEFINITION *
@@ -24,6 +23,11 @@ var contractCreatorRemainBalance = defaultTotalSupply.minus(pre_fund_amount.time
 function logging(msg) {
   // Define a CSS to format the text
   console.log('\x1b[47m\x1b[30m[TT]>>> ' + msg + '\x1b[0m');
+}
+
+function loggingEvent(details) {
+  // Define a CSS to format the text
+  console.log('\x1b[45m\x1b[30m[TT]>>> [Event][' + details.event + ']' + JSON.stringify(details.args) + '\x1b[0m');
 }
 
 function printData(data) {
@@ -151,6 +155,7 @@ contract('Trade', function(accounts) {
         } else {
           let count = eventCounter[details.event];
           eventCounter[details.event] = count ? count + 1 : 1;
+          loggingEvent(details);
         }
       });
 
@@ -177,7 +182,8 @@ contract('Trade', function(accounts) {
       logging('TradeContract contract address ' + trade_contract.address + ' has init Ether balance ' + web3.eth.getBalance(trade_contract.address));
       // assert.equal(t0, pre_fund_amount, "trader contract should be pre-funded with " + pre_fund_amount + " tokens from accounts[0]=" + accounts[0]);
 
-      let value = 1 * 10 ** 18; // 1 eth = 1 * 10 ** 18 wei.
+      let value = new BigNumber(1).mul(eth_to_wei); // 1 eth = 1 * 10 ** 18 wei.
+      trade_contract_eth_balance = trade_contract_eth_balance.add(value);
 
       let data = web3Contract.takerBuyAsset.getData();
 
@@ -186,7 +192,7 @@ contract('Trade', function(accounts) {
         notOwnerPrivateKey,
         trade_contract.address,
         data,
-        value
+        value.toNumber()
       );
 
       let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
@@ -194,13 +200,13 @@ contract('Trade', function(accounts) {
       e0 = (await erc20_contract.balanceOf.call(erc20_contract.address)).toNumber();
       t0 = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
       logging(notOwner + ' has new token balance ' + notOwnerBalanceAfter);
-      assert(notOwnerBalanceAfter, eth_to_tok_exchangeRate.mul(eth_to_wei).toNumber(), "should have new token balance " + eth_to_tok_exchangeRate.mul(eth_to_wei));
+      assert.equal(notOwnerBalanceAfter, eth_to_tok_exchangeRate.mul(eth_to_wei).toNumber(), "should have new token balance " + eth_to_tok_exchangeRate.mul(eth_to_wei));
       logging('accounts[0]=' + accounts[0] + ' has new token balance ' + a0);
       logging('erc20_contract.address=' + erc20_contract.address + ' has new token balance ' + e0);
       logging('trade_contract.address=' + trade_contract.address + ' has new token balance ' + t0);
       logging('publicKeys[5]=' + notOwner + ' has new Ether balance ' + web3.eth.getBalance(publicKeys[5]));
-      assert(web3.eth.getBalance(trade_contract.address), value, "Trading contract received eth is not the same as " + value);
-      assert.isAtMost(web3.eth.getBalance(publicKeys[5]), (initEthbalance - value), "The full " + value + " did not reach the Trading contract");
+      assert.equal(trade_contract_eth_balance.toNumber(), value.toNumber(), "Trading contract received eth is not the same as " + value);
+      assert.isAtMost(web3.eth.getBalance(publicKeys[5]).toNumber(), initEthbalance.add(value).toNumber(), "The full " + value + " did not reach the Trading contract");
       // assert.equal(notOwnerBalanceAfter, 10000, 'it should get 10000 tokens for 1 eth');
       // assert.equal(t0, 499990000, 'trader contract token should subtract 10000');
       assert.strictEqual(0, result.indexOf('0x'));
@@ -213,13 +219,13 @@ contract('Trade', function(accounts) {
       await tryCatch(trade_contract.setExchangeRate(999) , errTypes.revert);
       let ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
       logging("Trading contract current exchange rate is " + ex_rate);
-      assert(ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
+      assert.equal(ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
       (await trade_contract.delegateExchangerAddress(pitmaster));
       eth_to_tok_exchangeRate = new BigNumber(999);
       let shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: pitmaster}));
       logging(shall_pass_result);
       let new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
-      assert(new_ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
+      assert.equal(new_ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
       logging("Trading contract new exchange rate is " + new_ex_rate);
       let prev_ex_rate = eth_to_tok_exchangeRate.toNumber();
       eth_to_tok_exchangeRate = new BigNumber(200);
@@ -228,11 +234,11 @@ contract('Trade', function(accounts) {
       await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: accounts[2]}) , errTypes.revert);
       await tryCatch(trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: accounts[0]}) , errTypes.revert);
       new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
-      assert(new_ex_rate, prev_ex_rate, "exchange rate shall not change if it was triggered by the contract owner!");
+      assert.equal(new_ex_rate, prev_ex_rate, "exchange rate shall not change if it was triggered by the contract owner!");
       shall_pass_result = (await trade_contract.setExchangeRate(eth_to_tok_exchangeRate.toNumber(), {from: pitmaster}));
       logging(shall_pass_result);
       new_ex_rate = (await trade_contract.exchangeRate.call()).toNumber();
-      assert(new_ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
+      assert.equal(new_ex_rate, eth_to_tok_exchangeRate.toNumber(), "exchange rate shall not change before delegation occurs!");
     });
     /* jshint ignore:end */
 
@@ -243,7 +249,7 @@ contract('Trade', function(accounts) {
     let eventCounter = {}; // to track all events fired
     let erc20_contract = null;
     let trade_contract = null;
-    let default_init_balance = pre_fund_amount;
+    let default_init_tok_balance = pre_fund_amount;
     let pitmaster = publicKeys[4]; // the wallet that can modify the exchange rate
     let rediculous_tok_exchangeRate = new BigNumber(900001);
 
@@ -280,6 +286,7 @@ contract('Trade', function(accounts) {
         } else {
           let count = eventCounter[details.event];
           eventCounter[details.event] = count ? count + 1 : 1;
+          loggingEvent(details);
         }
       });
 
@@ -289,26 +296,29 @@ contract('Trade', function(accounts) {
       (await trade_contract.delegateExchangerAddress(pitmaster));
 
       let before_balance = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
-      default_init_balance = new BigNumber(before_balance);
-      logging('trade contract ' + trade_contract.address + ' has init balance ' + default_init_balance);
+      default_init_tok_balance = new BigNumber(before_balance);
+      logging('trade contract ' + trade_contract.address + ' has init token balance ' + default_init_tok_balance);
       shall_pass_result = (await trade_contract.setExchangeRate(rediculous_tok_exchangeRate.toNumber(), {from: pitmaster}));
-      logging(shall_pass_result);
+      logging(JSON.stringify(shall_pass_result));
     });
 
-    it('should be able to replenish token for non-owner tx', async function() {
+    it('should be able to replenish 1M token triggered by non-owner tx', async function() {
       let notOwner = publicKeys[7];
       let notOwnerPrivateKey = privateKeys[7];
+      // accounts[0] should replenish the trade contract with 1M tokens
+      let account0_tok_balance = (await erc20_contract.balanceOf.call(accounts[0]));
       let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
-      let a0 = (await erc20_contract.balanceOf.call(accounts[0])).toNumber();
-      let t0 = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
-      let initEthbalance = web3.eth.getBalance(publicKeys[7]);
-      logging('accounts[0]=' + accounts[0] + ' has start token balance ' + a0);
-      logging('trade_contract.address=' + trade_contract.address + ' has start token balance ' + t0);
+      let trade_tok_balance = (await erc20_contract.balanceOf.call(trade_contract.address));
+      let initNotOwnerEthbalance = web3.eth.getBalance(notOwner);
       logging('publicKeys[7]=' + notOwner + ' has start token balance ' + notOwnerBalanceBefore);
-      logging('publicKeys[7]=' + notOwner + ' has init Ether balance ' + initEthbalance);
-      logging('TradeContract contract address ' + trade_contract.address + ' has init Ether balance ' + web3.eth.getBalance(trade_contract.address));
-      
-      let value = 2.2 * 10 ** 18; // 1 eth = 1 * 10 ** 18 wei.
+      logging('publicKeys[7]=' + notOwner + ' has init Ether balance ' + initNotOwnerEthbalance);
+      assert.equal(trade_contract_eth_balance.toNumber(), 1000000000000000000, 'trade contract should have 1 Eth');
+      assert.equal(notOwnerBalanceBefore, 0, 'notOwner accounts[7] should have 0 tokens at the moment');
+
+      let value = new BigNumber(2.2).mul(eth_to_wei); // 1 eth = 1 * 10 ** 18 wei.
+      trade_contract_eth_balance = trade_contract_eth_balance.add(value);
+      let expect_rcv_token = value.mul(rediculous_tok_exchangeRate);
+      logging('trading contract will have left over balance of ' + trade_tok_balance.sub(expect_rcv_token));
 
       let data = web3Contract.takerBuyAsset.getData();
 
@@ -317,20 +327,24 @@ contract('Trade', function(accounts) {
         notOwnerPrivateKey,
         trade_contract.address,
         data,
-        value
+        value.toNumber()
       );
 
       let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
-      a0 = (await erc20_contract.balanceOf.call(accounts[0])).toNumber();
-      t0 = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
-      logging(notOwner + ' has new token balance ' + notOwnerBalanceAfter);
-      assert(notOwnerBalanceAfter, rediculous_tok_exchangeRate.mul(eth_to_wei).toNumber(), "should have new token balance " + rediculous_tok_exchangeRate.mul(eth_to_wei));
-      logging('accounts[0]=' + accounts[0] + ' has new token balance ' + a0);
-      logging('trade_contract.address=' + trade_contract.address + ' has new token balance ' + t0);
-      logging('publicKeys[7]=' + notOwner + ' has new Ether balance ' + web3.eth.getBalance(publicKeys[7]));
+      let accounts0_tok_after_replenish = (await erc20_contract.balanceOf.call(accounts[0]));
+      let trade_replenish_balance = (await erc20_contract.balanceOf.call(trade_contract.address)).toNumber();
+      assert(account0_tok_balance.sub(accounts0_tok_after_replenish).toNumber() == pre_fund_amount.toNumber(),
+        'account[0] should transfer exactly 1M token to trade contract');
+      assert.equal(notOwnerBalanceAfter, expect_rcv_token.toNumber(), "should have new token balance " + expect_rcv_token);
+      assert((trade_replenish_balance > pre_fund_amount.toNumber() && 
+        trade_replenish_balance < (pre_fund_amount.add(new BigNumber(100000))).mul(eth_to_wei).toNumber()),
+        'trade contract was not replenished with 1M tokens');
+      logging('trade_contract.address=' + trade_contract.address + ' has new token balance ' + trade_replenish_balance);
+      logging('publicKeys[7]=' + notOwner + ' has new Ether balance ' + web3.eth.getBalance(notOwner));
       logging('TradeContract contract address ' + trade_contract.address + ' has new Ether balance ' + web3.eth.getBalance(trade_contract.address));
-      assert(web3.eth.getBalance(trade_contract.address), value, "Trading contract received eth is not the same as " + value);
-      assert.isAtMost(web3.eth.getBalance(publicKeys[7]), (initEthbalance - value), "The full " + value + " did not reach the Trading contract");
+      assert.equal(web3.eth.getBalance(trade_contract.address).toNumber(), trade_contract_eth_balance.toNumber(), "Trading contract received eth is not the same as " + value);
+      assert.isAtMost(web3.eth.getBalance(notOwner), initNotOwnerEthbalance.sub(value), "The full " + value + " did not reach the Trading contract");
+      logging(JSON.stringify(result));
       assert.strictEqual(0, result.indexOf('0x')); 
     });
     /* jshint ignore:end */
