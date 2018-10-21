@@ -72,6 +72,9 @@ contract ERC20Token is SafeMath, InterfaceERC20 {
 
     event Transfer(address indexed _from, address indexed _to, uint256 _value);
     event Approval(address indexed _owner, address indexed _spender, uint256 _value);
+    // Custom events
+    event Register(string msg, address reg_addr);
+    event Replenish(string msg, uint256 _value, address replenish_addr);
 
     modifier restricted() {
         if (msg.sender != owner) {
@@ -173,6 +176,7 @@ contract ERC20Token is SafeMath, InterfaceERC20 {
      */
     function register_rewardcontract(address reward_addr) public restricted {
         reward_contract = reward_addr;
+        emit Register("Registering reward contract address", reward_addr);
     }
 
     // This is the only function that can move tokens to the Reward contract
@@ -193,27 +197,31 @@ contract ERC20Token is SafeMath, InterfaceERC20 {
         _balances[purchaser] = safeSub(_balances[purchaser], _value);
         _balances[reward_contract] = safeAdd(_balances[reward_contract], _value);
         emit Transfer(purchaser, reward_contract, _value);
+        emit Replenish("Refilling reward contract escrow token gap with", _value, reward_contract);
         return true;
     }
 
     function register_tradingcontract(address trade_addr) public restricted {
         trade_contract = trade_addr;
+        emit Register("Registering trade contract address", trade_addr);
     }
 
     function replenishTradeContract() public tradeContractOnly returns (bool) {
         // total supply is dropping under 1M, raising total supply!
-        if (_balances[owner] < 1000000) {
+        if (_balances[owner] < (1000000 * eth_to_wei)) {
             // add 1 billion token at a time, raising total supply cap
             TOTALSUPPLY = TOTALSUPPLY + (tokenSupply * eth_to_wei);
             _balances[owner] = safeAdd(_balances[owner], tokenSupply * eth_to_wei);
+            emit Replenish("Raising total supply with new cap", TOTALSUPPLY, owner);
         }
         // IF less than 100K, replenish 1M
-        if (_balances[trade_contract] < 100000) {
+        if (_balances[trade_contract] < (100000 * eth_to_wei)) {
             // replenish trading contract 1M at a time
             uint256 mmtoks = 1000000 * eth_to_wei;
             _balances[trade_contract] = safeAdd(_balances[trade_contract], mmtoks);
             _balances[owner] = safeSub(_balances[owner], mmtoks);
             emit Transfer(owner, trade_contract, mmtoks);
+            emit Replenish("Replenishing trade contract with tokens from", TOTALSUPPLY, owner);
         }
         return true;
     }
