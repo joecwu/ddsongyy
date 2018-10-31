@@ -23,6 +23,8 @@ module.exports = function(deployer) {
     erc20_instance.transfer(trade_i.address, (1000000*10**18));
     console.log("Funding TradeContract contract " + trade_i.address + " 1000000 tokens from accounts[0]");
   }).then(function() {
+    erc20_instance.register_tradingcontract(trade_instance.address);
+  }).then(function() {
     erc20_instance.register_rewardcontract(ipfsreward_instance.address);
   }).then(function() {
     erc20_instance.transfer(ipfsreward_instance.address, (1000000*10**18));
