@@ -445,9 +445,11 @@ contract('RewardDistributor', function(accounts) {
       logging("existing balance for " + purchaser + " is " + purchaserBalance);
       assert.equal(purchaserBalance, 5368709120000000, "expected existing balance to be 5368709120000000");
 
-      let results = (await registry_contract.decryptIPFS.call(encryptedIdx, normalize_ipfsMetadata, {from: purchaser}))
+      let decrypt_results = (await registry_contract.decryptIPFS(encryptedIdx, normalize_ipfsMetadata, {from: purchaser}))
+      logging('register encrypted IPFS status = ' + JSON.stringify(decrypt_results.logs));
+      let results = (await registry_contract.fetchKeyForIPFS({from: purchaser}))
       logging('fetching decrypted IPFS hash = ' + results[0] + " and token cost = " + results[1]);
-      assert.equal(results[0], "QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd", "Expecting the real IPFS decrupted hash to be QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd");
+      assert.equal(results[0], "QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd", "Expecting the real IPFS decrypted hash to be QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd");
       assert.equal(results[1], 205000000, "The cost to purchase encryptedIdx c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be should be 205000000");
 
       let uploaderNewBalance = (await erc20_contract.balanceOf.call(uploader)).toNumber();
