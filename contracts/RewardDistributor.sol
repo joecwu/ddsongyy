@@ -52,7 +52,10 @@ contract RewardDistributor is SafeMath {
     mapping (string => uint256) private randomNess;
     // variable length keys here
     mapping (string => bytes) private decryptKeys; 
-    
+    // A temp storage for each ipfs file access by wallet, only wallet owner
+    // can access their own slot
+    mapping (address => ipfsPayment) private tmpKeyStorage;
+
     // TODO: Introduce penalties (lien) to hold rewards or wallet removal for bad actors
     // mapping (address => bool) blacklist;
 
@@ -196,7 +199,7 @@ contract RewardDistributor is SafeMath {
 
      return: ipfsHash, token_cost
      */
-    function decryptIPFS(string ipfsMetadataHash) external returns (string, uint256, string, uint256) {
+    function decryptIPFS(string ipfsMetadataHash) external payable returns (bool) {
         require(bytes(ipfsMetadataHash).length > 0, "cannot query empty index");
         // TBD: capture these to look for abuse?
         // If price is 0, revert, the user does not need to call this function as well.
@@ -207,8 +210,16 @@ contract RewardDistributor is SafeMath {
         require(InterfaceERC20(exchanging_token_addr).transfer(data_owner, minimal_cost), "Sending token to data owner failed");
         require(InterfaceERC20(exchanging_token_addr).transferCost(msg.sender, minimal_cost), "Deduct token from purchaser to us");
         emit PurchaseTxRecord(msg.sender, data_owner, minimal_cost);
-        string storage indirectKeyIdx = decryptIpfs[ipfsMetadataHash].ipfsKeyIdx;
-        string storage encIpfs = decryptIpfs[ipfsMetadataHash].encryptedIpfs;
+        tmpKeyStorage[msg.sender].encryptedIpfs = decryptIpfs[ipfsMetadataHash].encryptedIpfs;
+        tmpKeyStorage[msg.sender].ipfsKeyIdx = decryptIpfs[ipfsMetadataHash].ipfsKeyIdx;
+        tmpKeyStorage[msg.sender].price = minimal_cost;
+        return true;
+    }
+
+    function fetchKeyForIPFS() external view returns (string, uint256, string, uint256) {
+        uint256 minimal_cost = tmpKeyStorage[msg.sender].price;
+        string storage indirectKeyIdx = tmpKeyStorage[msg.sender].ipfsKeyIdx;
+        string storage encIpfs = tmpKeyStorage[msg.sender].encryptedIpfs;
         string storage pkey = string(decryptKeys[indirectKeyIdx]);
         uint256 rkey = randomNess[indirectKeyIdx];
         return (pkey, rkey, encIpfs, minimal_cost);
