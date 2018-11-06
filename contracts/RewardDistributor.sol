@@ -142,6 +142,8 @@ contract RewardDistributor is SafeMath {
 
     // Returns a random number for users to shuffle their key, etc.
     function generateLocalRand(string keyLookupIdx, uint256 seed) external returns (bool) {
+        // the chances for the same file to collision here should be very very tiny
+        require(randomNess[keyLookupIdx] == 0, "random slot already taken for your potential file registration");
         // This is really just a dummy picker on the seed from the user
         uint256 s = safeDiv(seed, 13);
         randomNess[keyLookupIdx] = s;

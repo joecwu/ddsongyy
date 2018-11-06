@@ -436,6 +436,7 @@ contract('RewardDistributor', function(accounts) {
 
       let realKey = potential_key + c_rand; // predictable combination for FULL key
       logging("generated encryption key = " + realKey);
+      assert.equal(realKey, 'abcd1234ABCD12348', 'generating random number has changed, encryption is not backward compatible!');
       let encryptedIPFSHash = crypto_js.AES.encrypt(realIPFSHash, realKey).toString();
       logging("ipfs encrypted to " + encryptedIPFSHash);
       // Decrypt test
