@@ -195,7 +195,7 @@ contract('Trade', function(accounts) {
       logging('trade_contract.address=' + trade_contract.address + ' has new token balance ' + t0);
       logging('publicKeys[5]=' + notOwner + ' has new Ether balance ' + web3.eth.getBalance(publicKeys[5]));
       assert(web3.eth.getBalance(trade_contract.address), value, "Trading contract received eth is not the same as " + value);
-      assert.isAtMost(web3.eth.getBalance(publicKeys[5]), (initEthbalance - value), "The full " + value + " did not reach the Trading contract");
+      assert.isAtMost(web3.eth.getBalance(publicKeys[5]).toNumber(), (initEthbalance - value), "The full " + value + " did not reach the Trading contract");
       // assert.equal(notOwnerBalanceAfter, 10000, 'it should get 10000 tokens for 1 eth');
       // assert.equal(t0, 499990000, 'trader contract token should subtract 10000');
       assert.strictEqual(0, result.indexOf('0x'));
