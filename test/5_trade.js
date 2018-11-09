@@ -343,7 +343,7 @@ contract('Trade', function(accounts) {
       logging('publicKeys[7]=' + notOwner + ' has new Ether balance ' + web3.eth.getBalance(notOwner));
       logging('TradeContract contract address ' + trade_contract.address + ' has new Ether balance ' + web3.eth.getBalance(trade_contract.address));
       assert.equal(web3.eth.getBalance(trade_contract.address).toNumber(), trade_contract_eth_balance.toNumber(), "Trading contract received eth is not the same as " + value);
-      assert.isAtMost(web3.eth.getBalance(notOwner), initNotOwnerEthbalance.sub(value), "The full " + value + " did not reach the Trading contract");
+      assert.isAtMost(web3.eth.getBalance(notOwner).toNumber(), initNotOwnerEthbalance.sub(value).toNumber(), "The full " + value + " did not reach the Trading contract");
       logging(JSON.stringify(result));
       assert.strictEqual(0, result.indexOf('0x')); 
     });
