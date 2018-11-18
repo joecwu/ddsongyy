@@ -81,7 +81,7 @@ contract RewardDistributor is SafeMath {
     event RewardTokens(address indexed dataowner, uint256 ethersSent, uint256 tokensGranted);
     event RegisteredFreeRecord(address indexed registor, string ipfsHash);
     event RegisteredEncryptedRecord(address indexed registor, string ipfsMetadataHash, uint256 underlyingFileSize, uint256 tokenCost);
-    event PurchaseTxRecord(address indexed accesser, address indexed dataowner, uint256 tokenCost);
+    event PurchaseTxRecord(address indexed accesser, address indexed dataowner, string ipfsMetadataHash, uint256 tokenCost);
     event RewardEvent(string msg, bool allowIpfsREgistration);
     event NewExchangeRate(string msg, uint256 newExchangeRate);
 
@@ -211,7 +211,7 @@ contract RewardDistributor is SafeMath {
         require(data_owner != 0, "wallet address invalid");
         require(InterfaceERC20(exchanging_token_addr).transfer(data_owner, minimal_cost), "Sending token to data owner failed");
         require(InterfaceERC20(exchanging_token_addr).transferCost(msg.sender, minimal_cost), "Deduct token from purchaser to us");
-        emit PurchaseTxRecord(msg.sender, data_owner, minimal_cost);
+        emit PurchaseTxRecord(msg.sender, data_owner, ipfsMetadataHash, minimal_cost);
         tmpKeyStorage[msg.sender].encryptedIpfs = decryptIpfs[ipfsMetadataHash].encryptedIpfs;
         tmpKeyStorage[msg.sender].ipfsKeyIdx = decryptIpfs[ipfsMetadataHash].ipfsKeyIdx;
         tmpKeyStorage[msg.sender].price = minimal_cost;
