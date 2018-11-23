@@ -310,8 +310,8 @@ web3.setProvider(new web3.providers.WebsocketProvider('http://127.0.0.1:8546'));
 let contract_instance = new web3.eth.Contract(abi, address);
 
 contract_instance.events.allEvents((err, result) => {
-  if (error) {
-          console.error(error);
+  if (err) {
+          console.error(err);
   } else {
     console.log(JSON.stringify(result));
   } 
