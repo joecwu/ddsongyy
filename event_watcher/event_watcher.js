@@ -305,12 +305,14 @@ const abi = [
     type: 'event',
   },
 ];
-const lib_contract = new Web3.eth.Contract(abi, address, { gasPrice: 2000000000, gas: 600000 });
+var web3 = new Web3();
+web3.setProvider(new web3.providers.WebsocketProvider('http://127.0.0.1:8546'));
+let contract_instance = new web3.eth.Contract(abi, address);
 
-liob_contract.events.allEvents((err, result) => {
+contract_instance.events.allEvents((err, result) => {
   if (error) {
           console.error(error);
   } else {
     console.log(JSON.stringify(result));
-  }
+  } 
 });
