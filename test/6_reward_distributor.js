@@ -246,109 +246,12 @@ contract('RewardDistributor', function(accounts) {
 
   }); // end of describe
 
-  describe("RewardDistributor registering IPFS test cases", function() {
-    let web3Contract = null;
-    let eventCounter = {}; // to track all events fired
-    let erc20_contract = null;
-    let registry_contract = null;
-    let ipfs_test_string = 'QmYrPebEaSZxmRqduAuJE5Wry8WYVM9hDtRiUqYkGcB86S';
-    let ipfs_test_filesize = 1599;
-    let spent_ether = 0; // no eth should be exchanged in this contract
-    let default_init_balance = pre_fund_amount;
-    /* jshint ignore:start */
-    let expected_balance = (new BigNumber(ipfs_test_filesize).mul(eth_to_wei)).div(filesize_to_token_ex);
-    /* jshint ignore:end */
-
-    /* jshint ignore:start */
-    before(async () => {
-      context = await init_erc20_tok.run(accounts);
-      erc20_contract = context.erc20tokInstance;
-      assert(erc20_contract !== undefined, 'has been assigned with ERC20 contract instance');
-      registry_contract = (await storage_registry.deployed(erc20_contract.address, true, proof_of_stake_balance, {from: accounts[1]}));
-      web3Contract = web3.eth.contract(registry_contract.abi).at(registry_contract.address);
-      owner = web3Contract._eth.coinbase;
-      logging('ERC20 Token Contract Address=' + erc20_contract.address);
-      logging('RewardDistributor Contract Address=' + registry_contract.address);
-      assert.equal(owner, publicKeys[0], 'accounts[0] and publicKeys[0] wallet mismatch!');
-      assert.equal(accounts[1], publicKeys[1], 'accounts[1] and publicKeys[1] wallet mismatch!');
-      let other = publicKeys[1];
-  
-      // Verifying that you have specified the right key for testing in ganache-cli
-      if (publicKeys[0] !== owner || publicKeys[1] !== other) {
-        throw new Error('Use `truffle develop` and store the keys in ./test/truffle-keys.js' +
-        ', and make sure you specify these keys in ganache-cli');
-      }
-
-      let pre_fund_completed = (await erc20_contract.transfer(registry_contract.address, pre_fund_amount.toNumber(), {from: accounts[0]}));
-      logging('pre-funding registry_contract ' + registry_contract.address + ' with additional tokens ' + pre_fund_amount);
-      // Update default balance after new transfer
-      default_init_balance = default_init_balance.add(pre_fund_amount);
-
-      // Tracks all events for later verification, count may be sufficient?
-      registry_contract.allEvents({}, (error, details) => {
-        if (error) {
-          console.error(error);
-        } else {
-          let count = eventCounter[details.event];
-          eventCounter[details.event] = count ? count + 1 : 1;
-        }
-      });
-
-      let reg_init_balance = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
-      assert.equal(reg_init_balance, default_init_balance.toNumber(), 'registry contract should have balance ' + default_init_balance);
-    });
-
-    it('should have pre-funded tokens before serving registry', async function() {
-      let t0 = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
-      assert.equal(t0, default_init_balance.toNumber(), "registry_contract " + registry_contract.address +
-        " contract should still have remaining " + default_init_balance + " tokens in accounts[1]=" + accounts[1]);
-    });
-
-    it('should be able to register IPFS hash for non-owner', async function() {
-      let notOwner = publicKeys[5];
-      let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
-      let before_balance = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
-      logging('registry_contract.address=' + registry_contract.address + ' has start token balance ' + before_balance);
-      logging('publicKeys[5]=' + notOwner + ' has start token balance ' + notOwnerBalanceBefore);
-      assert.equal(notOwnerBalanceBefore, 0, 'publicKeys[5]=' + notOwner + ' should have 0 token');
-      let reg_wallet_eth_before = new BigNumber(web3.eth.getBalance(registry_contract.address).toNumber());
-
-      let eth_value = new BigNumber(1).mul(eth_to_wei); // 1 eth = 1 * 10 ** 18 wei. This needs to align with the contract
-      let reg_successful = (await registry_contract.registerIPFS(ipfs_test_string, ipfs_test_filesize, {value: eth_value, from: notOwner}))
-      logging('register IPFS status = ' + reg_successful.toString());
-
-      let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
-      let t0 = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
-      logging(notOwner + ' has new token balance ' + notOwnerBalanceAfter);
-      let reg_wallet_eth_after = new BigNumber(web3.eth.getBalance(registry_contract.address).toNumber());
-      
-      assert.strictEqual(reg_wallet_eth_before.add(eth_value).toNumber(), reg_wallet_eth_after.toNumber(), 'registry contract wallet should receive additional Eth ' + eth_value);
-      assert.strictEqual(notOwnerBalanceAfter, expected_balance.toNumber(), 'it should get ' + expected_balance + ' tokens for file size ' + ipfs_test_filesize);
-      assert.strictEqual(t0, before_balance - expected_balance.toNumber(), 'registry contract token should have remaining balance ' + (before_balance - expected_balance.toNumber()));
-    });
-
-    it('should be able to fetch the IPFS hash by their wallet', async function() {
-      let notOwner = publicKeys[5];
-      let queried_ipfs = (await registry_contract.queryIPFSList(notOwner, {from: notOwner})).toString();
-      logging('fetched IPFS hash = ' + queried_ipfs);
-      assert.equal(queried_ipfs, ipfs_test_string, 'it should get ipfs hash ' + ipfs_test_string);
-
-      let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
-      logging('publicKeys[5]=' + notOwner + ' has token balance ' + notOwnerBalanceBefore);
-      t0 = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
-      assert.equal(t0, default_init_balance.sub(expected_balance).toNumber(), 'registry contract token should remain unchanged with balance ' + default_init_balance.sub(expected_balance));
-      assert.equal(notOwnerBalanceBefore, expected_balance, 'publicKeys[5]=' + notOwner + ' token balance should remain the same');
-    });
-    /* jshint ignore:end */
-
-  }); // end of describe
-
   describe("RewardDistributor ipfs metadata and encrypting IPFS test cases", function() {
     let web3Contract = null;
     let eventCounter = {}; // to track all events fired
     let erc20_contract = null;
     let registry_contract = null;
-    let default_init_balance = 0;
+    let default_init_balance = new BigNumber(0);
     let rewardexchanger = publicKeys[4]; // the wallet that can modify the exchange rate
 
     /* jshint ignore:start */
@@ -395,7 +298,7 @@ contract('RewardDistributor', function(accounts) {
 
       (await erc20_contract.register_rewardcontract(registry_contract.address));
 
-      let before_balance = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
+      let before_balance = (await erc20_contract.balanceOf.call(registry_contract.address));
       default_init_balance = before_balance;
       logging('registry contract ' + registry_contract.address + ' has init balance ' + default_init_balance);
     });
@@ -403,7 +306,7 @@ contract('RewardDistributor', function(accounts) {
     it('should have pre-funded tokens before serving registry', async function() {
       let t0 = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
       logging('registry_contract=' + registry_contract.address + ' has init token balance ' + t0);
-      assert.equal(t0, default_init_balance, 'registry_contract ' + registry_contract.address +
+      assert.equal(t0, default_init_balance.toNumber(), 'registry_contract ' + registry_contract.address +
         ' contract should still have ' + default_init_balance + ' tokens');
     });
 
@@ -427,15 +330,13 @@ contract('RewardDistributor', function(accounts) {
       assert.equal(ipfssha256, 'c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be', 'sha256 lib not compatible, expecting sha256 c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be but got ' + ipfssha256);
       // TODO: What is the chances of collision here?
       let key2ndIdx = shuffleString(l_rand + ipfssha256 + sha256coder(potential_key));
-      logging("shuffled idx = " + key2ndIdx);
-      // Example: shuffle/encrypt real key to disguise
-      let c_gen = (await registry_contract.generateLocalRand(key2ndIdx, l_rand, {from: notOwner}));
-      logging("contract generate random number " + JSON.stringify(c_gen));
-      let c_rand = (await registry_contract.getLocalRand.call(key2ndIdx, {from: notOwner})).toNumber();
-      logging("contract return random number " + c_rand);
+      // TODO: this is a week randomness and small domain to brute force attack. Expand it.
+      let c_rand = Math.floor(l_rand / 13);
+      logging("contract expect random number " + c_rand);
 
       let realKey = potential_key + c_rand; // predictable combination for FULL key
       logging("generated encryption key = " + realKey);
+      assert.equal(realKey, 'abcd1234ABCD12348', 'generating random number has changed, encryption is not backward compatible!');
       let encryptedIPFSHash = crypto_js.AES.encrypt(realIPFSHash, realKey).toString();
       logging("ipfs encrypted to " + encryptedIPFSHash);
       // Decrypt test
@@ -447,7 +348,7 @@ contract('RewardDistributor', function(accounts) {
       let testMetadata = '{'
       + '"description": ' + '"whatever you want to put here",'
       + '"filesize": ' + '41,'
-      + '"encrypted": ' + '"' + ipfssha256 + '"'
+      + '"encrypted": ' + '"' + encryptedIPFSHash + '"'
       + '}';
       let normalized_testMetadata = JSON.stringify(JSON.parse(testMetadata));
       logging('normalized_json=' + normalized_testMetadata);
@@ -455,14 +356,19 @@ contract('RewardDistributor', function(accounts) {
 
       let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       logging("current balance for publicKeys[6]=" + notOwner + " is " + notOwnerBalanceBefore);
-      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, potential_key, key2ndIdx, encryptedIPFSHash, 41, {from: notOwner}))
+      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, potential_key, key2ndIdx, l_rand, encryptedIPFSHash, 41, {from: notOwner}))
       logging('register encrypted IPFS status = ' + JSON.stringify(reg_successful.logs));
       let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       logging("new balance for publicKeys[6]=" + notOwner + " is " + notOwnerBalanceAfter);
       assert.equal(notOwnerBalanceAfter, expect_reward, "expected reward should be 205000000");
-      logging('registry contract should have the same remaining balance ' + default_init_balance);
       let reg_balance = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
-      assert.equal(reg_balance, default_init_balance, 'registry contract should not lose any tokens');
+      logging('registry contract now has remaining balance ' + reg_balance);
+      let new_default_init_balance = (default_init_balance.sub(expect_reward));
+      assert.equal(reg_balance,
+                   new_default_init_balance.toNumber(),
+                   'registry contract should have the remaining tokens ' + new_default_init_balance);
+      default_init_balance = new_default_init_balance;
+      logging('the calculated remaining balance should be the same as ' + new_default_init_balance);
     }); // end test case
  
 
@@ -478,11 +384,8 @@ contract('RewardDistributor', function(accounts) {
       // TODO: What is the chances of collision here?
       let key2ndIdx = shuffleString(l_rand + ipfssha256 + sha256coder(potential_key));
       logging("shuffled idx = " + key2ndIdx);
-      // Example: shuffle/encrypt real key to disguise
-      let c_gen = (await registry_contract.generateLocalRand(key2ndIdx, l_rand, {from: notOwner}));
-      logging("contract generate random number " + JSON.stringify(c_gen));
-      let c_rand = (await registry_contract.getLocalRand.call(key2ndIdx, {from: notOwner})).toNumber();
-      logging("contract return random number " + c_rand);
+      let c_rand = Math.floor(l_rand / 13);
+      logging("contract expect random number " + c_rand);
 
       let realKey = potential_key + c_rand; // predictable combination for FULL key
       logging("generated encryption key = " + realKey);
@@ -497,7 +400,7 @@ contract('RewardDistributor', function(accounts) {
       let testMetadata = '{'
       + '"description": ' + '"an 1G file",'
       + '"filesize": ' + '1073741824,'
-      + '"encrypted": ' + '"' + ipfssha256 + '"'
+      + '"encrypted": ' + '"' + encryptedIPFSHash + '"'
       + '}';
       let normalized_testMetadata = JSON.stringify(JSON.parse(testMetadata));
       logging('normalized_json=' + normalized_testMetadata);
@@ -505,11 +408,22 @@ contract('RewardDistributor', function(accounts) {
 
       let notOwnerBalanceBefore = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       logging("current balance for publicKeys[7]=" + notOwner + " is " + notOwnerBalanceBefore);
-      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, potential_key, key2ndIdx, encryptedIPFSHash, 1073741824, {from: notOwner}))
+      // potential_key = first half of the key
+      // key2ndIdx= points to the 2nd half of the key
+      // encryptedIPFSHash = index 
+      let reg_successful = (await registry_contract.encryptIPFS(normalize_ipfsMetadata, potential_key, key2ndIdx, l_rand, encryptedIPFSHash, 1073741824, {from: notOwner}))
       logging('register encrypted IPFS status = ' + JSON.stringify(reg_successful.logs));
       let notOwnerBalanceAfter = (await erc20_contract.balanceOf.call(notOwner)).toNumber();
       logging("new balance for publicKeys[7]=" + notOwner + " is " + notOwnerBalanceAfter);
       assert.equal(notOwnerBalanceAfter, expect_reward, "expected reward should be 5368709120000000");
+      let reg_balance = (await erc20_contract.balanceOf.call(registry_contract.address)).toNumber();
+      let new_default_init_balance = (default_init_balance.sub(expect_reward));
+      assert.equal(reg_balance,
+                   new_default_init_balance.toNumber(),
+                   'registry contract should have the remaining tokens ' + new_default_init_balance);
+      default_init_balance = new_default_init_balance;
+      logging('registry contract has remaining balance ' + reg_balance);
+      logging('the calculated remaining balance should be the same as ' + new_default_init_balance);
     }); // end test case
 
     /**
@@ -526,16 +440,17 @@ contract('RewardDistributor', function(accounts) {
 
       let purchaserBalance = (await erc20_contract.balanceOf.call(purchaser)).toNumber();
       logging("existing balance for " + purchaser + " is " + purchaserBalance);
-      // assert.equal(purchaserBalance, 5368709120000000, "expected existing balance to be 5368709120000000");
+      assert.equal(purchaserBalance, 5368709120000000, "expected existing balance to be 5368709120000000");
 
-      let results = (await registry_contract.decryptIPFS.call(normalize_ipfsMetadata, {from: purchaser}))
-      logging('fetching decrypted IPFS hash pkey = ' + results[0]);
-      logging('fetching decrypted IPFS hash rkey = ' + results[1]);
-      logging('fetching decrypted IPFS hash encryptedIpfs = ' + results[2]);
-      logging('fetching decrypted IPFS hash cost = ' + results[3]);
-      assert.equal(results[0], "abcd1234ABCD1234", "Expecting the pkey to be abcd1234ABCD1234");
-      assert.equal(results[1], 8, "Expecting the remote random number to be 8");
-      assert.equal(results[3], 205000000, "Expecting the minimal cost to be 205000000");
+      let decrypt_results = (await registry_contract.decryptIPFS(normalize_ipfsMetadata, {from: purchaser}))
+      logging('register encrypted IPFS status = ' + JSON.stringify(decrypt_results.logs));
+      let results = (await registry_contract.fetchKeyForIPFS({from: purchaser}))
+      logging('fetching decrypted 1st_partial_key=' + results[0] + " 2nd_partial_key=" + results[1] + " encryptedHash=" + results[2] + " cost=" + results[3]);
+      let realKey = results[0] + '' + results[1]; // predictable combination for FULL key
+      logging('AES encryption key is = ' + realKey);
+      let decryptIPFSHash = crypto_js.AES.decrypt(results[2], realKey).toString(crypto_js.enc.Utf8);
+      assert.equal(decryptIPFSHash, "QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd", "Expecting the real IPFS decrypted hash to be QmSzzutTv2AFN6mtLkPs4tDbzqXrVZ82NV6kutmp68bpYd");
+      assert.equal(results[3], 205000000, "The cost to purchase encryptedIdx c180debe61a9f28ec4aef26734af8f19aed8b5d5c6c30cba87b132eea71f04be should be 205000000");
 
       let uploaderNewBalance = (await erc20_contract.balanceOf.call(uploader)).toNumber();
       logging("new balance for " + uploader + " is " + uploaderNewBalance);
