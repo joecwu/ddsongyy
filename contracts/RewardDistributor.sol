@@ -20,7 +20,7 @@ contract RewardDistributor is SafeMath {
     uint256 public constant decimals = 18;
 
     // A simple constant reward at the moment
-    uint256 public defaultRewardFileSize = 200 * 1000 * 1000 * 1000; // 1 tokens reward = 200GB (200,000,000,000)
+    uint256 public defaultRewardFileSize = 200 * 1024 * 1024 * 1024; // 1 tokens reward = 200GB (214,748,364,800)
     
     // proof of stake - minimal requirement for a wallet to be registered and active
     /**
@@ -40,7 +40,8 @@ contract RewardDistributor is SafeMath {
     /** 
     Provides the real IPFS hash when user call and pay for the proper token value.
       price: token to purchase ipfs hash
-      ipfsHash: the real IPFS hash
+      ipfsKeyIdx: index to keys
+      encryptedIpfs: the real encrypted IPFS hash
     */
     struct ipfsPayment {
         uint256 price;
