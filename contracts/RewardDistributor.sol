@@ -57,6 +57,13 @@ contract RewardDistributor is SafeMath {
     // can access their own slot
     mapping (address => ipfsPayment) private tmpKeyStorage;
 
+    // Experimental to track all access records per wallet
+    // This may result in attacks to scrape all results from specific wallets, etc.
+    struct ipfsMultiplePayment {
+        mapping(string => ipfsPayment) slots; // string ipfsMetadata => ipfsPayment mapping
+    }
+    mapping (address => ipfsMultiplePayment) private tmpKeyParallelStorage;
+
     // TODO: Introduce penalties (lien) to hold rewards or wallet removal for bad actors
     // mapping (address => bool) blacklist;
 
@@ -178,6 +185,9 @@ contract RewardDistributor is SafeMath {
         tmpKeyStorage[msg.sender].encryptedIpfs = decryptIpfs[ipfsMetadataHash].encryptedIpfs;
         tmpKeyStorage[msg.sender].ipfsKeyIdx = decryptIpfs[ipfsMetadataHash].ipfsKeyIdx;
         tmpKeyStorage[msg.sender].price = minimal_cost;
+        tmpKeyParallelStorage[msg.sender].slots[ipfsMetadataHash].encryptedIpfs = decryptIpfs[ipfsMetadataHash].encryptedIpfs;
+        tmpKeyParallelStorage[msg.sender].slots[ipfsMetadataHash].ipfsKeyIdx = decryptIpfs[ipfsMetadataHash].ipfsKeyIdx;
+        tmpKeyParallelStorage[msg.sender].slots[ipfsMetadataHash].price = minimal_cost;
         return true;
     }
 
@@ -185,6 +195,15 @@ contract RewardDistributor is SafeMath {
         uint256 minimal_cost = tmpKeyStorage[msg.sender].price;
         string storage indirectKeyIdx = tmpKeyStorage[msg.sender].ipfsKeyIdx;
         string storage encIpfs = tmpKeyStorage[msg.sender].encryptedIpfs;
+        string storage pkey = string(decryptKeys[indirectKeyIdx]);
+        uint256 rkey = randomNess[indirectKeyIdx];
+        return (pkey, rkey, encIpfs, minimal_cost);
+    }
+
+    function fetchParallelKeyForIPFS(string ipfsMetadataHash) external view returns (string, uint256, string, uint256) {
+        uint256 minimal_cost = tmpKeyParallelStorage[msg.sender].slots[ipfsMetadataHash].price;
+        string storage indirectKeyIdx = tmpKeyParallelStorage[msg.sender].slots[ipfsMetadataHash].ipfsKeyIdx;
+        string storage encIpfs = tmpKeyParallelStorage[msg.sender].slots[ipfsMetadataHash].encryptedIpfs;
         string storage pkey = string(decryptKeys[indirectKeyIdx]);
         uint256 rkey = randomNess[indirectKeyIdx];
         return (pkey, rkey, encIpfs, minimal_cost);
