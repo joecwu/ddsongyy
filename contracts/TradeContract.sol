@@ -11,6 +11,8 @@ contract TradeContract is SafeMath {
     address public owner;
     // the address that can modify the exchange rate on-the-fly
     address public exchanger;
+    // the address to withdraw some eth
+    address private target_wallet;
     // The token contract is dealing with
     address public exchanging_token_addr;
     // activate token exchange, we can shut this down anytime by 'owner'
@@ -41,16 +43,27 @@ contract TradeContract is SafeMath {
         _;
     }
 
+    // restrict withdraw ownership to existing target wallets or owners only
+    modifier restricted_withdraw() {
+        if (msg.sender != owner && msg.sender != target_wallet) {
+            revert("caller is not contract owner nor existing withdrawer");
+        }
+        _;
+    }
+
     /** 
      Events to capture and notify
      */
     event ExchangeTokens(address indexed buyer, uint256 ethersSent, uint256 tokensBought);
     event AllowExchange(string msg, bool allowTokenEx);
     event NewExchangeRate(string msg, uint256 newExchangeRate);
+    event Withdrawal(address caller, address target_wallet, uint256 amount);
 
-    constructor(address _ex_tok_addr, bool enableTokenEx) public {
+    constructor(address _ex_tok_addr, address _target_wallet, bool enableTokenEx) public {
         if (_ex_tok_addr == 0x0) revert("cannot interact with null contract");
+        if (_target_wallet == 0x0) revert("cannot set 0 to target wallet during initialization");
         owner = msg.sender;
+        target_wallet = _target_wallet;
         exchanging_token_addr = _ex_tok_addr;
         allowTokenEx = enableTokenEx;
         if(exchangeRate < 0) revert("exchange rate cannot be negative");
@@ -60,17 +73,21 @@ contract TradeContract is SafeMath {
         return exchanging_token_addr;
     }
 
-    function activate(bool flipTokenEx) public restricted {
+    function activate(bool flipTokenEx) external restricted {
         allowTokenEx = flipTokenEx;
         emit AllowExchange("allow token exchange", flipTokenEx);
     }
 
     // Once contract owner set this, we no longer need the contract owner to update the exchange rate
-    function delegateExchangerAddress(address _exchanger) public restricted {
+    function delegateExchangerAddress(address _exchanger) external restricted {
         exchanger = _exchanger;
     }
 
-    function setExchangeRate(uint256 newExRate) public pitmaster {
+    function updateWithdrawAddress(address _target_wallet) external restricted_withdraw {
+        target_wallet = _target_wallet;
+    }
+
+    function setExchangeRate(uint256 newExRate) external pitmaster {
         require(newExRate > 0, "Exchange rate can never be set to 0 or negative");
         exchangeRate = newExRate;
         emit NewExchangeRate("New exchange rate set", newExRate);
@@ -105,7 +122,14 @@ contract TradeContract is SafeMath {
         takerBuyAsset();
     }
 
-    function ownerKill() public restricted {
+    function ownerKill() external restricted {
         selfdestruct(owner);
+    }
+
+    function withdraw(uint256 amount) external restricted_withdraw {
+        require(target_wallet != 0, "Target wallet not set, can't withdraw!");
+        // Use transfer() : require(target_wallet.send(amount), "Can't withdraw eth");
+        target_wallet.transfer(amount);
+        emit Withdrawal(msg.sender, target_wallet, amount);
     }
 }

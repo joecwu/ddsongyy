@@ -107,17 +107,17 @@ contract RewardDistributor is SafeMath {
         return exchanging_token_addr;
     }
 
-    function activateRegistry(bool allowIpfsRegister) public restricted {
+    function activateRegistry(bool allowIpfsRegister) external restricted {
         allowIpfsReg = allowIpfsRegister;
         emit RewardEvent("allow ipfs registration", allowIpfsReg);
     }
 
     // Once contract owner set this, we no longer need the contract owner to update the exchange rate
-    function delegateExchangerAddress(address _exchanger) public restricted {
+    function delegateExchangerAddress(address _exchanger) external restricted {
         rewardexchanger = _exchanger;
     }
 
-    function setRewardExchangeRate(uint256 newRewardExRate) public requiremaster {
+    function setRewardExchangeRate(uint256 newRewardExRate) external requiremaster {
         require(newRewardExRate > 0, "Exchange rate can never be set to 0 or negative");
         defaultRewardFileSize = newRewardExRate;
         emit NewExchangeRate("New reward exchange rate set", newRewardExRate);
@@ -213,7 +213,7 @@ contract RewardDistributor is SafeMath {
         revert("we do not accept payments here");
     }
 
-    function ownerKill() public restricted {
+    function ownerKill() external restricted {
         selfdestruct(owner);
     }
 }
